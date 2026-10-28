@@ -13,20 +13,24 @@
 
 
 //1. sin(x) 좌표 데이터 생성 함수
-//※반환형을 EXPORT로 하면 다른 OS에서도 오류없이 작동함
-EXPORT void generate_sin_data(double start, double end, int n_points, double* x_out, double* y_out)
+//※반환형을 EXPORT로 하고 앞에 extern "C"를 붙이면 다른 OS에서도 오류없이 작동함
+extern "C" EXPORT void generate_sin_data(double start, double end, int n_points, double* x_out, double* y_out)
 {
 	double step = (end - start) / (n_points - 1);
 	for (int i = 0; i < n_points; i++)
 	{
-		x_out[i] = start + (i * step);
+		x_out[i] = start + (i * step); //x좌표 만들기
 		y_out[i] = sin(x_out[i]); //math.h의 sin()연산
 	}
 }
 
 //2. 특정 x 좌표에서의 sin(x)값과 미분계수 연산 함수
-EXPORT void calc_tangent(double x, double* y_out, double* slope_out)
+extern "C" EXPORT void calc_tangent(double x, double* y_out, double* slope_out)
 {
 	*y_out = sin(x);
 	*slope_out = cos(x); //sin(x)의 미분 -> cos(x)
 }
+
+//C언어의 함수는 return값을 하나밖에 반환을 안하기에
+//파이썬에서 오는 매개변수의 주소에다가
+//포인터로 값을 하나하나 때려박아야 함

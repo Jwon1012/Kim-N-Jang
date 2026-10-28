@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="CalcTech_C_Project.vcxproj" />
+  <Project Path="CalcTech_C_Project.vcxproj" Id="538bf23a-7b24-4b98-8f53-cbb55df67eb4" />
 </Solution>
