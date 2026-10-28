@@ -1,0 +1,2 @@
+#define CALCTECHCPROJECT_API __declspec(dllexport)
+#define CALCTECHCPROJECT_API __declspec(dllimport)
