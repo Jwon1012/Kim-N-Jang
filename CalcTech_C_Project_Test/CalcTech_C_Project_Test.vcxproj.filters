@@ -21,6 +21,9 @@
     <ClCompile Include="모듈1-2_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="모듈 1-3_test..c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="모듈I.h">

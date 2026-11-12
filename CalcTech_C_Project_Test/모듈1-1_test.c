@@ -2,21 +2,52 @@
 
 //I. 수식을 토큰 리스트 단위로 쪼개어서 출력
 // 0. 예약어 종류 정의
-const char* KEYWORDS[] = {
-    "sin", "cos", "tan", "sec","csc","cot","asin", "acos","atan","asec","acsc","acot","sinh","cosh","tanh","log", "ln", "sqrt",
-    "lim", "sum", "int", "infty", "laplace", "exp",
-    "pi", "theta"
+/*const char* KEYWORDS[] = {
+    "sec","csc","cot","asin", "acos","atan","asec","acsc","acot","sinh","cosh","tanh", "sqrt",
+    "infty", "laplace", "pi", "theta"
 };
-const int KEYWORD_COUNT = sizeof(KEYWORDS) / sizeof(KEYWORDS[0]);
+const int KEYWORD_COUNT = sizeof(KEYWORDS) / sizeof(KEYWORDS[0]);*/
 
-// 2. 예약어 여부 검사 함수
-int is_keyword(const char* str) {
+const KeywordSpec KEYWORD_TABLE[] = {
+    //단일인자 함수 (expected_args = 1)
+    { "exp", NODE_FUNCTION,   1 },
+    { "ln",  NODE_FUNCTION,   1 }, //자연로그
+    { "log", NODE_FUNCTION,   1 }, //상용로그
+    { "sin", NODE_FUNCTION,   1 },
+    { "cos", NODE_FUNCTION,   1 },
+    { "tan", NODE_FUNCTION,   1 },
+    { "sec", NODE_FUNCTION,   1 }, //삼각함수의 역수
+    { "csc", NODE_FUNCTION,   1 },
+    { "cot", NODE_FUNCTION,   1 }, 
+    { "asin", NODE_FUNCTION,   1 }, //역삼각함수
+    { "acos", NODE_FUNCTION,   1 },
+    { "atan", NODE_FUNCTION,   1 },
+    { "asec", NODE_FUNCTION,   1 },
+    { "acsc", NODE_FUNCTION,   1 },
+    { "acot", NODE_FUNCTION,   1 },
+    { "sinh", NODE_FUNCTION,   1 }, //쌍곡선함수
+    { "cosh", NODE_FUNCTION,   1 },
+    { "tanh", NODE_FUNCTION,   1 },
+    { "sqrt", NODE_FUNCTION,   1 },
+    //다중인자 함수 (expected_args > 1)
+    { "lim", NODE_SPECIAL_OP, 3 }, //args[0]: 변수, args[1]: 목표값, args[2] f(x)
+    { "sum", NODE_SPECIAL_OP, 4 }, //args[0]: 변수, args[1]: 시작값, args[2] 끝값, args[3] 함수
+    { "int", NODE_SPECIAL_OP, 4 } //args[0]: 아래끝, args[1]: 위끝, args[2]: 피적분함수, args[3]"
+};
+const int KEYWORD_COUNT = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
+//1. keyword탐색 함수
+const KeywordSpec* find_keyword(const char* text) {
     for (int i = 0; i < KEYWORD_COUNT; i++) {
-        if (strcmp(str, KEYWORDS[i]) == 0) {
-            return 1; // 예약어 맞음
+        if (strcmp(text, KEYWORD_TABLE[i].name) == 0) {
+            return &KEYWORD_TABLE[i];
         }
     }
-    return 0; // 일반 변수
+    return NULL;
+}
+// 2. 예약어 여부 검사 함수
+int is_keyword(const char* str)
+{
+    return find_keyword(str) != NULL; //입력한 str이 위에서 정의한 예약어와 같으면 1, 아니면 0 반환
 }
 
 // 토큰 리스트 메모리 초기화

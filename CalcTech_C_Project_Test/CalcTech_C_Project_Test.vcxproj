@@ -143,6 +143,7 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="모듈 1-3_test..c" />
     <ClCompile Include="모듈1-1_test.c" />
     <ClCompile Include="모듈1-2_test.c" />
   </ItemGroup>

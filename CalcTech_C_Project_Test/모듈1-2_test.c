@@ -3,26 +3,7 @@
 // II. 쪼갠 리스트를 AST 형태로 출력
 // 1단계에서 선언한 TokenType 및 TokenList 구조체를 공유.
 // 재귀강하파서(파서 안에서 다른 파서를 부르고 필요하면 자기가 자기를 호출하는 파서)로 작성
-// 1. AST 노드 Type
-typedef enum {
-    NODE_NUMBER,    // 숫자 (예: 2, 1)
-    NODE_VARIABLE,  // 변수 및 예약어 (예: x, sin)
-    NODE_BINARY_OP  // 이항 연산자 (+, -, *, /, ^)
-} ASTNodeType;
 
-// 2. AST 단일 노드 구조체
-typedef struct ASTNode {
-    ASTNodeType type;
-    char value[32];          // 값 또는 연산자 텍스트 ("2", "x", "+", "/" 등)
-    struct ASTNode* left;    // 왼쪽 자식 노드 포인터
-    struct ASTNode* right;   // 오른쪽 자식 노드 포인터
-} ASTNode;
-
-// 3. 파서 위치 관리 구조체
-typedef struct {
-    TokenList* list; // 1단계에서 쪼갠 토큰 리스트
-    int current;     // 현재 읽고 있는 토큰 위치 (인덱스)
-} Parser;
 
 // 노드 동적 생성 함수 (malloc)
 ASTNode* create_ast_node(ASTNodeType type, const char* value) 
@@ -35,22 +16,35 @@ ASTNode* create_ast_node(ASTNodeType type, const char* value)
 
     //2. 해당 땅에 정보 채우기 
     node->type = type; //해당 빵이 숫자빵인지 연산빵인지 태그를 붙여서 분류
-    strncpy_s(node->value, sizeof(node->value), value, 31); //빵을 안전하게 복사해서 팍팍 채워넣다가
-    node->value[31] = '\0'; //공간 다 차면 공백으로 마무리
-
+    strncpy_s(node->value, sizeof(node->value), value, _TRUNCATE); //빵을 안전하게 복사해서 팍팍 채워넣기
+    //_TRUNCATE함수는 소숫점 이하를 버리는 함수
     //3. 아직 옆에는 아무도 없으니 자식 node들을 초기화
     node->left = NULL;
     node->right = NULL;
 
-    //
+    //4. 다중 인자 멤버 안전 초기화
+    for (int i = 0; i < 4; i++)
+    {
+        node->args[i] = NULL;
+    }
     return node;
 }
 
 // AST 트리 동적 메모리 해제 함수 (재귀 해제)
-void free_ast(ASTNode* node) {
+void free_ast(ASTNode* node) 
+{
     if (node == NULL) return;
     free_ast(node->left);
     free_ast(node->right);
+
+    //다중 인자 연산자의 자식 트리들도 전부 해제
+    if (node->type == NODE_SPECIAL_OP)
+    {
+        for (int i = 0; i < node->arg_count; i++)
+        {
+            free_ast(node->args[i]);
+        }
+    }
     free(node);
 }
 
@@ -75,9 +69,9 @@ ASTNode* parse_term(Parser* p);
 ASTNode* parse_power(Parser* p);
 ASTNode* parse_factor(Parser* p);
 // 아래에서 올라가는 Bottom-Up방식 채택
-// 
 // [최고 우선순위] 숫자, 변수, 괄호 ( ) 처리
-ASTNode* parse_factor(Parser* p) {
+ASTNode* parse_factor(Parser* p) 
+{
     Token* t = peek(p);
     if (t == NULL) return NULL;
 
@@ -97,12 +91,53 @@ ASTNode* parse_factor(Parser* p) {
         advance(p);
         return create_ast_node(NODE_NUMBER, t->text);
     }
+    // (3) 변수 또는 예약어(함수/특수연산자) 처리
+    if (t->type == TOKEN_VARIABLE || t->type == TOKEN_KEYWORD) {
+        Token* id_token = advance(p); // 이름("x", "sin", "lim" 등) 꺼냄
+        Token* next_t = peek(p);
 
-    // (3) 변수 및 예약어 토큰
-    if (t->type == TOKEN_VARIABLE) {
-        advance(p);
-        return create_ast_node(NODE_VARIABLE, t->text);
+        // 바로 뒤에 '('가 따라오면 -> 함수 또는 특수 연산자 호출!
+        if (next_t != NULL && next_t->type == TOKEN_LPAREN) 
+        {
+            advance(p); // '(' 소비
+            const KeywordSpec* spec = find_keyword(id_token->text);
+
+            if (spec != NULL) {
+                ASTNode* node = create_ast_node(spec->type, spec->name);
+
+                // 괄호 닫힐 때까지 콤마(,)로 구분하며 인자 파싱
+                while (peek(p) != NULL && peek(p)->type != TOKEN_RPAREN) {
+                    if (node->arg_count < spec->expected_args) {
+                        ASTNode* arg_expr = parse_expression(p);
+
+                        // 단일 함수(sin 등)는 기존 left 포인터에도 연결
+                        if (spec->type == NODE_FUNCTION) {
+                            node->left = arg_expr;
+                        }
+                        node->args[node->arg_count++] = arg_expr;
+                    }
+
+                    // 콤마(',')가 있으면 넘기고 다음 인자 파싱, 없으면 루프 종료
+                    if (peek(p) != NULL && peek(p)->type == TOKEN_COMMA) {
+                        advance(p);
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                // 닫는 괄호 ')' 소비
+                if (peek(p) != NULL && peek(p)->type == TOKEN_RPAREN) {
+                    advance(p);
+                }
+                return node;
+            }
+        }
+
+        // 괄호가 안 따라오면 일반 변수(x, y 등) 노드로 반환
+        return create_ast_node(NODE_VARIABLE, id_token->text);
     }
+
 
     return NULL;
 }
@@ -176,32 +211,51 @@ void print_ast_horizontal(ASTNode* node, char* prefix, int is_left) {
     // 가지 기호 출력 (마지막 자식인지 중간 자식인지 구분)
     printf("%s", is_left ? "├── " : "└── ");
 
-    // 노드 타입별 텍스트 출력
-    if (node->type == NODE_BINARY_OP) {
-        printf("[Op: %s]\n", node->value);
-    }
-    else if (node->type == NODE_NUMBER) {
-        printf("[Num: %s]\n", node->value);
-    }
-    else {
+    // 노트 타입별 라벨 출력
+    if (node->type == NODE_NUMBER) 
+    {
         printf("[Var: %s]\n", node->value);
     }
-
-    // 다음 계층으로 넘겨줄 접두사(선 연결) 버퍼 준비
-    char new_prefix[512];
-    snprintf(new_prefix, sizeof(new_prefix), "%s%s", prefix, is_left ? "│   " : "    ");
-
-    int has_left = (node->left != NULL);
-    int has_right = (node->right != NULL);
-
-    // 왼쪽 자식 먼저 방문 (위쪽 가지)
-    if (has_left) {
-        print_ast_horizontal(node->left, new_prefix, has_right ? 1 : 0);
+    else if (node->type == NODE_VARIABLE)
+    {
+        printf("[Var: %s]\n", node->value);
     }
+    else if (node->type == NODE_FUNCTION)
+    {
+        printf("[Func: %s]\n", node->value);
+    }
+    else if (node->type == NODE_SPECIAL_OP)
+    {
+        printf("[SpecialOp: %s]\n", node->value);
+    }
+    else
+    {
+        printf("[BinaryOp: %s]\n", node->value);
+    }
+   
+    // 다음 계층으로 넘겨줄 접두사(선 연결) 버퍼 준비
+    char next_prefix[512];
+    snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix, is_left ? "│   " : "    ");
 
-    // 오른쪽 자식 방문 (아래쪽 가지)
-    if (has_right) {
-        print_ast_horizontal(node->right, new_prefix, 0);
+    if (node->type == NODE_SPECIAL_OP) {
+        for (int i = 0; i < node->arg_count; i++) {
+            int has_next = (i < node->arg_count - 1);
+            print_ast_horizontal(node->args[i], next_prefix, has_next);
+        }
+    }
+    // 3. 기존의 왼쪽/오른쪽 자식 방문 코드를 else 안으로 넣기
+    else {
+        int has_left = (node->left != NULL);
+        int has_right = (node->right != NULL);
+
+        if (has_left || has_right) {
+            if (has_left) {
+                print_ast_horizontal(node->left, next_prefix, has_right);
+            }
+            if (has_right) {
+                print_ast_horizontal(node->right, next_prefix, 0);
+            }
+        }
     }
 }
 
@@ -233,53 +287,4 @@ void print_ast_tree(ASTNode* root) {
     if (has_right) {
         print_ast_horizontal(root->right, prefix, 0);
     }
-}
-
-// [통합 테스트 메인 함수]
-int main(void) {
-    char input_expr[256];
-
-    printf(" [CalcTech Core Engine] Module 1-1 & 1-2 Integrated Test\n");
-
-    while (1) {
-        printf("\n종료하시려면 'exit'을 입력하세요.\n");
-        printf("수식 입력 (예시: (2*x) / (1 + x^2)) > ");
-
-        // 1. 키보드로 한 줄 입력받기 (실패 시 또는 EOF 시 종료)
-        if (fgets(input_expr, sizeof(input_expr), stdin) == NULL) {
-            break;
-        }
-
-        // 2. 입력받은 문자열 끝의 엔터('\n') 제거
-        input_expr[strcspn(input_expr, "\r\n")] = '\0';
-
-        // 3. 'exit' 입력 시 무한 루프 탈출 (strcmp는 두 문자열이 같으면 0 반환)
-        if (strcmp(input_expr, "'exit'") == 0) {
-            printf("엔진 테스트를 종료합니다.\n");
-            break;
-        }
-
-        // 4. 빈 문자열(그냥 엔터만 친 경우) 예외 처리
-        if (strlen(input_expr) == 0) {
-            continue;
-        }
-
-        // --- 1단계 Lexer 실행 ---
-        TokenList list = tokenize(input_expr);
-        printf("\n[1단계 Lexer 결과]\n");
-        print_tokens(&list);
-
-        // --- 2단계 AST Parser 실행 ---
-        Parser parser = { &list, 0 };
-        ASTNode* root = parse_expression(&parser);
-
-        printf("\n[2단계 AST Parser 트리 출력 (가로 확장형)]\n");
-        print_ast_tree(root);
-
-        // --- 메모리 해제 (매 루프마다 깔끔하게 싹 지워줘야 메모리 누수가 안 남!) ---
-        free_ast(root);
-        free_token_list(&list);
-    }
-
-    return 0;
 }
