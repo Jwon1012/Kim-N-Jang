@@ -1,4 +1,5 @@
 ﻿#pragma once
+#define _USE_MATH_DEFINES // 1. 먼저 스위치를 켜고
 
 //모듈 I: 사용자가 입력한 수식을 컴퓨터가 인식 가능한 형태로 변환하는 모듈
 
@@ -7,7 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-
+#include <math.h>
+#include <complex.h>
 // 빵틀 정의
 // [빵틀 1] 토큰의 종류 (숫자, 변수, 연산자, 괄호 등 분류)
 
@@ -45,7 +47,7 @@ typedef enum {
     NODE_BINARY_OP  // 이항 연산자 (+, -, *, /, ^)
 } ASTNodeType;
 
-// [빵틀 5] 예약어 관리 빵틀
+// [빵틀 5] 예약어 관리 빵틀 (밀가루고 뭐고 없는 쇠통 빵틀)
 typedef struct {
     const char* name; //예약어 text
     ASTNodeType type; //단일 인자 / 다중 인자

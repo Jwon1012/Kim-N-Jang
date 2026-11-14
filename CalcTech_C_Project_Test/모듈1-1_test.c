@@ -1,75 +1,83 @@
 ﻿#include "모듈I.h"
 
-//I. 수식을 토큰 리스트 단위로 쪼개어서 출력
-// 0. 예약어 종류 정의
-/*const char* KEYWORDS[] = {
-    "sec","csc","cot","asin", "acos","atan","asec","acsc","acot","sinh","cosh","tanh", "sqrt",
-    "infty", "laplace", "pi", "theta"
-};
-const int KEYWORD_COUNT = sizeof(KEYWORDS) / sizeof(KEYWORDS[0]);*/
-
 const KeywordSpec KEYWORD_TABLE[] = {
-    //단일인자 함수 (expected_args = 1)
-    { "exp", NODE_FUNCTION,   1 },
-    { "ln",  NODE_FUNCTION,   1 }, //자연로그
-    { "log", NODE_FUNCTION,   1 }, //상용로그
-    { "sin", NODE_FUNCTION,   1 },
-    { "cos", NODE_FUNCTION,   1 },
-    { "tan", NODE_FUNCTION,   1 },
-    { "sec", NODE_FUNCTION,   1 }, //삼각함수의 역수
-    { "csc", NODE_FUNCTION,   1 },
-    { "cot", NODE_FUNCTION,   1 }, 
-    { "asin", NODE_FUNCTION,   1 }, //역삼각함수
-    { "acos", NODE_FUNCTION,   1 },
-    { "atan", NODE_FUNCTION,   1 },
-    { "asec", NODE_FUNCTION,   1 },
-    { "acsc", NODE_FUNCTION,   1 },
-    { "acot", NODE_FUNCTION,   1 },
-    { "sinh", NODE_FUNCTION,   1 }, //쌍곡선함수
-    { "cosh", NODE_FUNCTION,   1 },
-    { "tanh", NODE_FUNCTION,   1 },
-    { "sqrt", NODE_FUNCTION,   1 },
-    //다중인자 함수 (expected_args > 1)
-    { "lim", NODE_SPECIAL_OP, 3 }, //args[0]: 변수, args[1]: 목표값, args[2] f(x)
-    { "sum", NODE_SPECIAL_OP, 4 }, //args[0]: 변수, args[1]: 시작값, args[2] 끝값, args[3] 함수
-    { "int", NODE_SPECIAL_OP, 4 } //args[0]: 아래끝, args[1]: 위끝, args[2]: 피적분함수, args[3]"
+    // [0] 상수 키워드 (expected_args = 0, 자식 노드 없음)
+    { "inf",       NODE_NUMBER,     0 }, // 무한대 (\infty)
+    { "infty",     NODE_NUMBER,     0 }, // LaTeX 표기용 무한대
+    { "pi",        NODE_NUMBER,     0 }, // 원주율 (\pi)
+
+    // [1] 단일 인자 함수 (expected_args = 1)
+    { "exp",       NODE_FUNCTION,   1 }, // Exponential
+    { "ln",        NODE_FUNCTION,   1 }, // 자연로그
+    { "log",       NODE_FUNCTION,   1 }, // 상용로그
+    { "abs",       NODE_FUNCTION,   1 }, // 절댓값 (\left| x \right|)
+    { "prime",     NODE_FUNCTION,   1 }, // 뉴턴/라그랑주 미분 (f'(x))
+    { "sin",       NODE_FUNCTION,   1 },
+    { "cos",       NODE_FUNCTION,   1 },
+    { "tan",       NODE_FUNCTION,   1 },
+    { "sec",       NODE_FUNCTION,   1 }, //삼각함수의 역수
+    { "csc",       NODE_FUNCTION,   1 },
+    { "cot",       NODE_FUNCTION,   1 },
+    { "asin",      NODE_FUNCTION,   1 }, //역삼각함수
+    { "acos",      NODE_FUNCTION,   1 },
+    { "atan",      NODE_FUNCTION,   1 },
+    { "asec",      NODE_FUNCTION,   1 },
+    { "acsc",      NODE_FUNCTION,   1 },
+    { "acot",      NODE_FUNCTION,   1 },
+    { "sinh",      NODE_FUNCTION,   1 }, //쌍곡선함수
+    { "cosh",      NODE_FUNCTION,   1 },
+    { "tanh",      NODE_FUNCTION,   1 },
+    { "sqrt",      NODE_FUNCTION,   1 }, //제곱근 (0.5제곱으로 작성해도 무관)
+
+    // [2] 다중 인자 함수 및 대형 수학 연산자 (expected_args >= 2)
+    { "frac",      NODE_SPECIAL_OP, 2 }, // args[0]: 분자, args[1]: 분모
+    { "logbase",   NODE_SPECIAL_OP, 2 }, // args[0]: 밑, args[1]: 진수
+    { "indef_int", NODE_SPECIAL_OP, 2 }, // args[0]: 피적분함수, args[1]: 적분변수 (부정적분)
+    { "diff",      NODE_SPECIAL_OP, 3 }, // args[0]: 피미분식, args[1]: 변수, args[2]: 미분횟수 (라이프니츠)
+    { "lim",       NODE_SPECIAL_OP, 3 }, // args[0]: 변수, args[1]: 목표값, args[2]: f(x)
+    { "sum",       NODE_SPECIAL_OP, 4 }, // args[0]: 변수, args[1]: 시작값, args[2]: 끝값, args[3]: 일반항
+    { "int",       NODE_SPECIAL_OP, 4 }  // args[0]: 아래끝, args[1]: 위끝, args[2]: 피적분함수, args[3]: 적분변수
 };
 const int KEYWORD_COUNT = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
-//1. keyword탐색 함수
-const KeywordSpec* find_keyword(const char* text) {
-    for (int i = 0; i < KEYWORD_COUNT; i++) {
-        if (strcmp(text, KEYWORD_TABLE[i].name) == 0) {
-            return &KEYWORD_TABLE[i];
-        }
+
+// 1. keyword 탐색 함수
+const KeywordSpec* find_keyword(const char* text)
+{
+    for (int i = 0; i < KEYWORD_COUNT; i++)
+    {
+    if (strcmp(text, KEYWORD_TABLE[i].name) == 0) return &KEYWORD_TABLE[i];
     }
     return NULL;
 }
+
 // 2. 예약어 여부 검사 함수
-int is_keyword(const char* str)
-{
-    return find_keyword(str) != NULL; //입력한 str이 위에서 정의한 예약어와 같으면 1, 아니면 0 반환
-}
+int is_keyword(const char* str) {return find_keyword(str) != NULL;}
 
 // 토큰 리스트 메모리 초기화
 void init_token_list(TokenList* list) {
-    list->capacity = 16;
+    list->capacity = 16; //리스트 용량
     list->count = 0;
     list->tokens = (Token*)malloc(sizeof(Token) * list->capacity);
-    //sizeof(Token): 토큰 방 1개 만드는데 필요한 땅 크기
-    //*list->capacity: 를 16개로 우선 설정
-    //malloc: 땅 16개를 우선 뚫어놨으니 시작 주소 가져가라는 의미 (memory + allocation)
-    //Token*: 해당 땅을 0번째 메모리부터 Token전용으로 독점하겠다는 의미
+//sizeof(Token): 토큰 방 1개 만드는데 필요한 땅 크기
+//*list->capacity: 를 16개로 우선 설정
+//malloc: 땅 16개를 우선 뚫어놨으니 시작 주소 가져가라는 의미 (memory + allocation)
+//Token*: 해당 땅을 0번째 메모리부터 Token전용으로 독점하겠다는 의미
 }
 
 // 토큰 동적 추가 (용량 초과 시 메모리 2배 확장)
-void add_token(TokenList* list, TokenType type, const char* text) {
-    if (list->count >= list->capacity) {
-        list->capacity *= 2; 
-        list->tokens = (Token*)realloc(list->tokens, sizeof(Token) * list->capacity);
+void add_token(TokenList* list, TokenType type, const char* text) 
+{
+    if (list->count >= list->capacity) 
+    {
+        list->capacity *= 2;
+        Token* temp = (Token*)realloc(list->tokens, sizeof(Token) * list->capacity);
+    //realloc: 땅이 꽉 차면 땅 개수를 list->capacity만큼 올리겠다는 의미
+        if (temp == NULL) return;
+        list->tokens = temp;
     }
-    list->tokens[list->count].type = type; //방금 잘라낸 토큰의 종류 저장
-    strncpy_s(list->tokens[list->count].text, sizeof(list->tokens[list->count].text), text, 31); //글자를 토큰 빵틀의 text 재료 안에 안전히 저장
-    list->tokens[list->count].text[31] = '\0'; // 문자열 안전 널 종결
+    list->tokens[list->count].type = type;
+    strncpy_s(list->tokens[list->count].text, sizeof(list->tokens[list->count].text), text, 31);
+    list->tokens[list->count].text[31] = '\0';
     list->count++;
 }
 
@@ -77,72 +85,73 @@ void add_token(TokenList* list, TokenType type, const char* text) {
 TokenList tokenize(const char* expr) {
     TokenList list;
     init_token_list(&list);
-
-    const char* p = expr; // 문자열 시작 주소를 포인터 p에 할당
+    const char* p = expr; //expr의 0번째 주소를 p에게 할당
 
     while (*p != '\0') {
-        // [규칙 A] 공백 문자는 건너뛰기 (포인터만 1바이트 직진)
-        if (isspace((unsigned char)*p)) {
-            p++;
+        // [규칙 A] 공백 문자는 건너뛰기
+        if (isspace((unsigned char)*p)) { p++; continue;}
+
+        // [규칙 B] 숫자 읽기 (정수 및 소수점 처리 - 연산자 우선순위 괄호 보완)
+        if (isdigit((unsigned char)*p) || *p == '.') 
+        {
+            char buf[256] = { 0 };
+            int idx = 0;
+            while ((isdigit((unsigned char)*p) || *p == '.') && idx < 255) buf[idx] = *p++;
+            add_token(&list, TOKEN_NUMBER, buf);
             continue;
         }
 
-        // [규칙 B] 숫자 읽기 (정수 및 소수점 처리)
-        // ex) "2x" 입력 시 '2'를 먼저 자르고 포인터를 'x' 위치로 옮김
-        if (isdigit((unsigned char)*p) || *p == '.' ) {
+        // [규칙 C] 변수 및 함수 이름 읽기
+        if (isalpha((unsigned char)*p)) 
+        {
             char buf[256] = { 0 };
             int idx = 0;
-            while (isdigit((unsigned char)*p) || *p == '.' && idx < 255) {
-                buf[idx++] = *p++; // 현재 글자 넣고 포인터 1칸 직진 (*p++)
-            }
-            add_token(&list, TOKEN_NUMBER, buf); //만약 3.14같은 소수점을 입력한다면 buf에는 총 4칸이 저장
-            continue;
-        }
-
-        // [규칙 C] 변수 및 함수 이름 읽기 (x, sin, cos 등)
-        if (isalpha((unsigned char)*p)) { //주어진 정수가 알파벳 문자인지 확인
-            char buf[256] = { 0 };
-            int idx = 0;
-            while (isalpha((unsigned char)*p) && idx < 255) {
-                buf[idx++] = *p++; // 현재 글자 넣고 포인터 1칸 직진 (*p++)
-            }
+            while (isalpha((unsigned char)*p) && idx < 255) buf[idx++] = *p++; // <-- idx++ 가 아니라 그냥 idx!
             buf[idx] = '\0';
-            //정의한 예약어 목록(sin,cos,tan,...)에 있는지 검사 
-            //여기 안에서 or조건을 통해 구현할 수는 있지만 그렇다고 코드가 극단적으로 길어지게 할 수는 X
-            //컴퓨터는 lim을 극한인지, 'l''i''m'인지 판단할 능력이 없음.
-            if (is_keyword(buf)){
-                add_token(&list, TOKEN_VARIABLE, buf); // "lim"등으로 통쨰로 등록
-            }
-            else
-            {//예약어가 아니면 'a','b','c'로 분리
+            buf[idx] = '\0';
+
+            // 예약어면 반드시 TOKEN_KEYWORD로 등록!
+            if (is_keyword(buf)) add_token(&list, TOKEN_KEYWORD, buf);
+            else 
+            {
                 for (int i = 0; i < idx; i++) 
                 {
                     char single_var[2] = { buf[i], '\0' };
                     add_token(&list, TOKEN_VARIABLE, single_var);
                 }
             }
-
             continue;
         }
 
         // [규칙 D] 사칙연산자 및 거듭제곱 기호 처리
-        if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '^') {
-            char buf[2] = { *p++, '\0' }; // 현재 문자를 넣고 주소 1칸 이동 (*p++)
+        if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '^') 
+        {
+            char buf[2] = { *p++, '\0' };
             add_token(&list, TOKEN_OPERATOR, buf);
             continue;
         }
 
         // [규칙 E] 여는 괄호 '('
-        if (*p == '(') {
+        if (*p == '(') 
+        {
             char buf[2] = { *p++, '\0' };
             add_token(&list, TOKEN_LPAREN, buf);
             continue;
         }
 
         // [규칙 F] 닫는 괄호 ')'
-        if (*p == ')') {
+        if (*p == ')') 
+        {
             char buf[2] = { *p++, '\0' };
             add_token(&list, TOKEN_RPAREN, buf);
+            continue;
+        }
+
+        // [규칙 G - 추가] 다중 인자 구분용 쉼표 ','
+        if (*p == ',') 
+        {
+            char buf[2] = { *p++, '\0' };
+            add_token(&list, TOKEN_COMMA, buf);
             continue;
         }
 
@@ -150,69 +159,28 @@ TokenList tokenize(const char* expr) {
         p++;
     }
 
+    // 토큰 리스트의 끝을 알리는 EOF 토큰 추가
+    add_token(&list, TOKEN_EOF, "EOF");
     return list;
 }
 
-// 5. 토큰 리스트 예쁘게 출력하기 [ '2', 'x' ]
-void print_tokens(const TokenList* list) {
+// 5. 토큰 리스트 출력 (마지막 EOF 제외하고 출력)
+void print_tokens(const TokenList* list) 
+{
     printf("[");
-    for (int i = 0; i < list->count; i++) {
+    int print_count = list->count;
+    if (print_count > 0 && list->tokens[print_count - 1].type == TOKEN_EOF) print_count--;
+    for (int i = 0; i < print_count; i++) 
+    {
         printf("'%s'", list->tokens[i].text);
-        if (i < list->count - 1) printf(", ");
+        if (i < print_count - 1) printf(", ");
     }
     printf("]\n");
 }
 
 // 6. 동적 메모리 해제
-void free_token_list(TokenList* list) {
-    if (list->tokens != NULL) {
-        free(list->tokens);
-        list->tokens = NULL;
-    }
-    list->count = 0;
-    list->capacity = 0;
-}
-
-// 7. 메인 테스트 함수 (디버깅용)
-int main_I(void) {
-    char input_expr[256];
-
-    printf(" [CalcTech Core Engine] Module 1 - Lexer Test\n");
-    printf(" 종료하시려면 '\"exit\"'을 입력하세요.\n");
-
-    while (1) {
-        printf("수식 입력 (ex: 2x, 3*x^2 + sin(x)) > ");
-
-        // 키보드로 공백 포함 한 줄 입력받기
-        if (fgets(input_expr, sizeof(input_expr), stdin) == NULL) {
-            break;
-        }
-
-        // 엔터키(\n) 제거
-        input_expr[strcspn(input_expr, "\r\n")] = '\0';
-
-        // 종료 조건 검사
-        if (strcmp(input_expr, "\"exit\"")==0) {
-            printf("Lexer 테스트를 종료합니다.\n");
-            break;
-        }
-
-        // 입력값이 비어있으면 건너뛰기
-        if (strlen(input_expr) == 0) {
-            continue;
-        }
-
-        // 토큰화 수행 및 결과 출력
-        TokenList list = tokenize(input_expr);
-
-        printf(" -> 분리된 토큰 개수 : %d개\n", list.count);
-        printf(" -> 토큰 리스트 결과 : ");
-        print_tokens(&list);
-        printf("\n");
-
-        // 동적 메모리 해제
-        free_token_list(&list);
-    }
-
-    return 0;
+void free_token_list(TokenList* list) 
+{
+    if (list->tokens != NULL) { free(list->tokens);list->tokens = NULL; }
+    list->count = 0; list->capacity = 0;
 }
