@@ -1,15 +1,15 @@
 ﻿#pragma once
-#define _USE_MATH_DEFINES // 1. 먼저 스위치를 켜고
-
-//모듈 I: 사용자가 입력한 수식을 컴퓨터가 인식 가능한 형태로 변환하는 모듈
-
- // 1. 공통 표준 라이브러리 모음
+#define _USE_MATH_DEFINES
+//공통 표준 라이브러리 모음
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
 #include <complex.h>
+
+//모듈 I: 사용자가 입력한 수식을 컴퓨터가 인식 가능한 형태로 변환하는 모듈
+
 // 빵틀 정의
 // [빵틀 1] 토큰의 종류 (숫자, 변수, 연산자, 괄호 등 분류)
 
@@ -73,6 +73,10 @@ typedef struct {
     int current;     // 현재 읽고 있는 토큰 위치 (인덱스)
 } Parser;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //외부 공개 함수
 
 //키워드 탐색 함수
@@ -112,3 +116,7 @@ void print_ast_tree(ASTNode* root);
 static void append_str(char* buf, size_t max_len, const char* str);
 // ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
 void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
+
+#ifdef __cplusplus
+}
+#endif
