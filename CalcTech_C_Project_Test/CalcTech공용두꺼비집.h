@@ -114,6 +114,12 @@ typedef struct {
     int is_closed;   // 1이면 교점/축으로 완전히 닫힌 영역, 0이면 화면 끝(x_min/x_max)에 닿은 열린 영역
 } TangentRegion;
 
+// [빵틀 9] N축의 원리를 반영하여 얻은 실근을 담는 빵틀
+typedef struct {
+  double t_val; // 겉함수 y = f(t)의 실근좌표
+  double x_val; // 속함수 g(x) = t의 실근좌표
+} CompositeRootPath;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -288,3 +294,20 @@ void generate_tangent_intercepts_array(
     double* out_y_int, //접선의 y절편 Y(t) = f(t) - t*f'(t) 배열
     double* out_tri_area //접선과 x축, y축이 이루는 직각삼각형 넓이 0.5 * |X(t) * Y(t)| 배열
 );
+
+/*파생함수 III: 합성함수*/
+
+//N축 기반 합성함수 개형 추론
+
+void generate_composite_n_axis_arrays(
+    const ASTNode* f, // 겉함수 f(t)
+    const ASTNode* g, // 속함수 g(x)
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x, //out_x   : 입력 정의역 x 배열
+    double* out_t, //out_t   : 속함수 치역 t = g(x) 배열 (N축 공유 축 좌표)
+    double* out_fog //out_fog : 최종 합성함수 y = f(g(x)) 배열 (PIP 캔버스용)
+);
+
+//합성 방정식의 실근 역추적 & 합성 부등식의 범위 스캐닝

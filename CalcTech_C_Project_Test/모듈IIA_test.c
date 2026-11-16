@@ -1,6 +1,8 @@
 ﻿#include "CalcTech공용두꺼비집.h"
 
 // 1. AST 수식 평가기: 트리를 후위 순회하며 x 대입 결과(double) 반환
+// 첫번째 인자는 자판기의 내용물, 두번째 인자는 자판기에 넣을 동전
+// 최종적으로는 계산된 결과라는 음료수를 밷어내는 함수
 double eval_ast(const ASTNode* node, double x) 
 {
     if (node == NULL) return NAN;

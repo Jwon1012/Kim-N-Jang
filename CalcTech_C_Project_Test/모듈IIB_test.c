@@ -34,10 +34,10 @@ double eval_tangent(TangentInfo tan_info, double x) {
 double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x) 
 { //곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
     switch (bound_type) {
-    case BOUND_FUNC:   return eval_ast(f, x); //곡선자체의 높이
-    case BOUND_TAN:    return eval_tangent(tan_info, x); //접선 자체의 높이
+    case BOUND_FUNC:    return eval_ast(f, x); //곡선자체의 높이
+    case BOUND_TAN:      return eval_tangent(tan_info, x); //접선 자체의 높이
     case BOUND_X_AXIS: return 0.0; // y=0의 높이값
-    default:           return NAN;
+    default:                      return NAN;
     }
 }
 //FUNC + TAN => 곡선 & 접선, TAN + X_AXIS => 접선 & 두 축
@@ -55,7 +55,7 @@ double integrate_between_bounds(
 ) {
     if (f == NULL || isnan(a) || isnan(b)) return NAN;
     if (fabs(b - a) < 1e-15) return 0.0;
-
+    //심프슨 법칙을 쓸떈 짝수번째 인덱스만 가능
     if (steps < 2) steps = 2;
     if (steps % 2 != 0) steps++;
 
@@ -71,7 +71,7 @@ double integrate_between_bounds(
         double diff = fabs(y_top - y_bot);
         if (isnan(diff)) return NAN;
         sum += (i % 2 == 0 ? 2.0 : 4.0) * diff;
-    }
+    } 
 
     return sum * (dx / 3.0);
 }
@@ -255,7 +255,7 @@ static double simpson_piece(const ASTNode* f, double x1, double x2, int steps, i
         if (isnan(yi)) return NAN;
         double val = is_abs ? fabs(yi) : yi;
         sum += (i % 2 == 0 ? 2.0 : 4.0) * val;
-    }
+    } //인덱스가 짝수번째 => 배열의 홀수번째 => x4, 반대의 경우엔 x2
     return sum * (dx / 3.0);
 }
 
@@ -477,6 +477,456 @@ void generate_tangent_intercepts_array(
 
 // 파생함수 III: 합성함수
 
-// IIIA: N축 기반 합성함수 개형 추론 & 수선 궤적 추적
+// N축 기반 합성함수 개형 추론 & 수선 궤적 추적
+void generate_composite_n_axis_arrays(
+    const ASTNode* f, // 겉함수 f(t)
+    const ASTNode* g, // 속함수 g(x)
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x, //out_x   : 입력 정의역 x 배열
+    double* out_t, //out_t   : 속함수 치역 t = g(x) 배열 (N축 공유 축 좌표)
+    double* out_fog //out_fog : 최종 합성함수 y = f(g(x)) 배열 (PIP 캔버스용)
+) {
+    if (f == NULL || g == NULL || count < 2) return;
 
-// IIIB: 합성 방부등식 실근, 해집합 스캐닝
+    double dx = (x_max - x_min) / (double)(count - 1);
+
+    for (int i = 0; i < count; i++) {
+        double x = x_min + i * dx;
+        double t = eval_ast(g, x); //속함수 g(x) = t
+        double y = isnan(t) ? NAN : eval_ast(f, t); //겉함수 y = f(t)
+        //y = f(t), t = g(x)
+        if (out_x)   out_x[i] = x;
+        if (out_t)   out_t[i] = t;
+        if (out_fog) out_fog[i] = y;
+    }
+}
+
+// 합성방정식 실근 역추적 & 합성부등식 해집합 스캐닝
+
+// [내부 도우미] 일반 함수방정식 h(u) = target 의 실근을 함수의 정의역 에서 모두 탐색
+static int scan_equation_roots(
+    const ASTNode* func,
+    double target, //f(g(x)) = k에서 g(x)를 t로 치환하여 g(x) = t라는 방정식에서는 t가 target, f(t) = k에선 k가 target
+    double u_min,
+    double u_max,
+    double* out_roots, //실근을 담는 바구니
+    int max_roots
+) {
+    int count = 0;
+    int scan_steps = 1000;
+    double du = (u_max - u_min) / (double)scan_steps; //
+
+    for (int i = 0; i < scan_steps && count < max_roots; i++) {
+        double a = u_min + i * du;
+        double b = a + du;
+        double ha = eval_ast(func, a) - target;
+        double hb = eval_ast(func, b) - target;
+
+        if (isnan(ha) || isnan(hb)) continue;
+
+        if (ha * hb <= 0.0) {
+            double left = a, right = b, h_left = ha;
+            for (int iter = 0; iter < 40; iter++) {
+                double mid = 0.5 * (left + right);
+                double h_mid = eval_ast(func, mid) - target;
+                if (fabs(h_mid) < ZERO_EPSILON) { left = right = mid; break; }
+                if (h_left * h_mid <= 0.0) right = mid;
+                else { left = mid; h_left = h_mid; }
+            }
+            double root = 0.5 * (left + right);
+
+            // 중복 근 방지
+            int dup = 0;
+            for (int k = 0; k < count; k++) {
+                if (fabs(out_roots[k] - root) < 1e-4) { dup = 1; break; }
+            }
+            if (!dup) out_roots[count++] = root;
+        }
+    }
+    return count;
+}
+
+//  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
+//  반환값: 찾아낸 전체 실근 x의 총개수
+int solve_composite_equation_n_axis(
+    const ASTNode* f, // 겉함수 f(t)
+    const ASTNode* g, // 속함수 g(x)
+    double k,         // 우변 상수 k (f(g(x)) = k)
+    double t_min,
+    double t_max,
+    double x_min,
+    double x_max,
+    CompositeRootPath* out_paths,
+    int max_paths
+) {
+    if (f == NULL || g == NULL || out_paths == NULL || max_paths <= 0) return 0;
+
+    // 1단계: 겉함수 f(t) = k 를 만족하는 중간 해 t_j 탐색
+    double t_roots[64];
+    int t_cnt = scan_equation_roots(f, k, t_min, t_max, t_roots, 64);
+
+    // 2단계: 각 t_j 에서 속함수로 수선의 발을 내려 g(x) = t_j 의 실근 x 탐색
+    int total_paths = 0;
+    double x_roots[64];
+
+    for (int i = 0; i < t_cnt && total_paths < max_paths; i++) {
+        double tj = t_roots[i];
+        int x_cnt = scan_equation_roots(g, tj, x_min, x_max, x_roots, 64);
+
+        for (int j = 0; j < x_cnt && total_paths < max_paths; j++) {
+            out_paths[total_paths].t_val = tj;
+            out_paths[total_paths].x_val = x_roots[j];
+            total_paths++;
+        }
+    }
+
+    return total_paths;
+}
+
+// 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
+void scan_composite_inequality(
+    const ASTNode* f,
+    const ASTNode* g,
+    double k, 
+    int op_type, //0 (> ), 1 (>= ), 2 (< ), 3 (<= )
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,
+    int* out_mask // out_mask[i]: 부등식을 만족하면 1, 아니면 0 (파이썬에서 x축 형광 하이라이트용)
+) {
+    if (f == NULL || g == NULL || count < 2 || out_mask == NULL) return;
+
+    double dx = (x_max - x_min) / (double)(count - 1);
+
+    for (int i = 0; i < count; i++) {
+        double x = x_min + i * dx;
+        if (out_x) out_x[i] = x;
+
+        double t = eval_ast(g, x);
+        double y = isnan(t) ? NAN : eval_ast(f, t);
+
+        if (isnan(y)) {
+            out_mask[i] = 0;
+            continue;
+        }
+
+        switch (op_type) {
+        case 0: out_mask[i] = (y > k); break;
+        case 1: out_mask[i] = (y >= k); break;
+        case 2: out_mask[i] = (y < k); break;
+        case 3: out_mask[i] = (y <= k); break;
+        default: out_mask[i] = 0;       break;
+        }
+    }
+}
+
+//파생함수 IV: 도함수와 이계도함수의 서브캔버스 연동 (실험VI 확장판)
+
+//원함수 -> 도함수, 도함수 -> 이계도함수
+// [내부 도우미] 2계 도함수 f''(x) 수치 계산 (중심차분)
+static double num_diff_2nd(const ASTNode* f, double x) {
+    double h = 1e-4;
+    double fp = eval_ast(f, x + h);
+    double f0 = eval_ast(f, x);
+    double fm = eval_ast(f, x - h);
+    if (isnan(fp) || isnan(f0) || isnan(fm)) return NAN;
+    return (fp - 2.0 * f0 + fm) / (h * h);
+}
+
+// 슬라이더 이동 시 현재 위치 t에서의 [원함수 접선] & [도함수 접선] 정보 일괄 추출
+CDP calc_cascade_derivative_at(const ASTNode* f, double t) {
+    CDP pt;
+    pt.t = t;
+    pt.ft = eval_ast(f, t);
+    pt.dft = num_diff_1st(f, t);
+    pt.d2ft = num_diff_2nd(f, t);
+
+    // 1단계: f(x) 위 점 (t, f(t))에서의 접선 방정식 절편
+    pt.tan1_y_int = pt.ft - t * pt.dft;
+
+    // 2단계: f'(x) 위 점 (t, f'(t))에서의 접선 방정식 절편 (동일 절차 반복)
+    pt.tan2_y_int = pt.dft - t * pt.d2ft;
+
+    return pt;
+}
+
+// PIP 1(f') 및 PIP 2(f'') 배경 곡선 배열 생성
+void generate_cascade_derivative_arrays(
+    const ASTNode* f,
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,
+    double* out_df,
+    double* out_d2f
+) {
+    if (f == NULL || count < 2) return;
+
+    double dx = (x_max - x_min) / (double)(count - 1);
+
+    for (int i = 0; i < count; i++) {
+        double x = x_min + i * dx;
+        if (out_x)   out_x[i] = x;
+        if (out_df)  out_df[i] = num_diff_1st(f, x);
+        if (out_d2f) out_d2f[i] = num_diff_2nd(f, x);
+    }
+}
+
+//파생함수 V: 평균값 정리와 경사하강법
+ 
+//파생함수 VA: 라그랑주 평균값 정리(MVT) 평행 접선 c 탐색 및 오차 상계(M) 분석
+/* ※라그랑주 MVT : 우리가 고등학교때 배운 MVT를 미분 가능한 초월함수까지 확장한 정리이고,
+ 함수가 절대로 넘을 수 없는 최대 속도 (립시츠 조건)를 찾는데 사용되는 정리중 하나.
+ 이 최대속도 (립시츠 상수 M)를 발견하면 컴퓨터에서 계산오차가 발생했을때의 타격을 예측 가능 */
+
+MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b) 
+{
+    MVTResult res;
+    memset(&res, 0, sizeof(MVTResult)); //memory + reset
+
+    // 예외 처리: 함수 트리가 없거나 구간 길이가 0이면 빈 구조체 반환
+    if (f == NULL || fabs(b - a) < ZERO_EPSILON) return res;
+
+    // 사용자가 b < a 로 거꾸로 입력해도 자동으로 a < b 순서로 정렬
+    if (a > b) {
+        double tmp = a;
+        a = b;
+        b = tmp;
+    }
+
+    // 1단계: 양 끝점을 잇는 할선(평균변화율 직선) 정보 세팅
+    res.a = a;
+    res.b = b;
+    res.fa = eval_ast(f, a);
+    res.fb = eval_ast(f, b);
+    res.secant_slope = (res.fb - res.fa) / (b - a);
+    res.secant_y_int = res.fa - a * res.secant_slope;
+
+    // 2단계: 구간 [a, b] 를 1000등분하여 스캔하면서
+    // (1) 최대 기울기 M (오차 상계) 갱신
+    // (2) f'(x) == secant_slope 가 되는 모든 만족점 c 포착
+    int steps = 1000;
+    double dx = (b - a) / (double)steps;
+
+    for (int i = 0; i < steps; i++) {
+        double x1 = a + i * dx;
+        double x2 = x1 + dx;
+
+        double d1 = num_diff_1st(f, x1); // 왼쪽 지점 순간변화율 f'(x1)
+        double d2 = num_diff_1st(f, x2); // 오른쪽 지점 순간변화율 f'(x2)
+
+        if (isnan(d1) || isnan(d2)) continue;
+
+        // [공학적 확장] 구간 내 가장 가파른 기울기 |f'(x)|를 계속 기록해 둠
+        // -> 나중에 |f(b) - f(a)| <= M * |b - a| (립시츠 오차 한계) 계산에 직결됨
+        // 립시츠 오차 한계: 함수의 최대 속도 제한, M: 구간 내 접선의 기울기중 가장 가파른 기울기
+        if (fabs(d1) > res.max_abs_deriv) {
+            res.max_abs_deriv = fabs(d1);
+        }
+
+        // 보조함수 g(x) = f'(x) - secant_slope 정의
+        // g(x) == 0 이 되는 지점이 곧 평균값 정리의 주인공 'c'
+        double g1 = d1 - res.secant_slope;
+        double g2 = d2 - res.secant_slope;
+
+        // 인접한 두 점 사이에서 g(x)의 부호가 바뀌었다면 그 사이에 c가 존재함!
+        if (g1 * g2 <= 0.0 && res.c_count < 32) {
+            double left = x1, right = x2, gl = g1;
+
+            // 이분법(Bisection) 35회 반복으로 c 좌표를 극한까지 정밀 조준
+            for (int iter = 0; iter < 35; iter++) {
+                double mid = 0.5 * (left + right);
+                double gm = num_diff_1st(f, mid) - res.secant_slope; //보조함수 g(m)
+
+                if (fabs(gm) < ZERO_EPSILON) {
+                    left = right = mid;
+                    break;
+                }
+                if (gl * gm <= 0.0) {
+                    right = mid;
+                }
+                else {
+                    left = mid;
+                    gl = gm;
+                }
+            }
+
+            double c = 0.5 * (left + right);
+
+            // 평균값 정리는 열린구간 (a, b) 내부의 점을 찾으므로 양 끝점은 제외
+            if (c > a + 1e-5 && c < b - 1e-5) {
+                // 격자 경계에 딱 걸려 같은 근이 두 번 들어가는 중복 방지
+                int is_dup = 0;
+                for (int k = 0; k < res.c_count; k++) {
+                    if (fabs(res.c_vals[k] - c) < 1e-4) {
+                        is_dup = 1;
+                        break;
+                    }
+                }
+
+                // 최종 합격한 만족점 c의 좌표와 평행 접선 y절편 패키징
+                if (!is_dup) {
+                    int idx = res.c_count++;
+                    res.c_vals[idx] = c;
+                    res.fc_vals[idx] = eval_ast(f, c);
+                    // 기울기가 secant_slope 이고 (c, f(c))를 지나는 평행 접선의 y절편
+                    res.tan_y_ints[idx] = res.fc_vals[idx] - c * res.secant_slope;
+                }
+            }
+        }
+    }
+
+    return res;
+}
+
+//파생함수 VB: 코시 평균값 정리 — 매개변수 곡선 (g(t), f(t)) 평행 속도 벡터 탐색
+
+
+/*코시 MVT: 
+아무리 어떤 물체가 wlfkf을 해도 현재 위치와 시작점을 이은 방향과 같아지는 순간은 반드시 존재한다는 정리.
+이 식에서 어느 하나의 변수를 다른 변수로 극한을 보내면 로피탈정리 뚝딱*/
+Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b) {
+    Cauchy res;
+    memset(&res, 0, sizeof(Cauchy));
+
+    if (f == NULL || g == NULL || fabs(b - a) < ZERO_EPSILON) return res;
+    if (a > b) { double tmp = a; a = b; b = tmp; }
+
+    // 1단계: 평면 곡선의 출발점(a)과 도착점(b), 그리고 둘을 잇는 변위 벡터(chord) 계산 (가로 변화량, 세로 변화량)
+    // e.g. 출발점A(1,2) 도착점B(5,8) 변위벡터 (5-1, 8-2)
+    res.a = a;
+    res.b = b;
+    res.ga = eval_ast(g, a);
+    res.fa = eval_ast(f, a);
+    res.gb = eval_ast(g, b);
+    res.fb = eval_ast(f, b);
+    res.chord_dx = res.gb - res.ga;
+    res.chord_dy = res.fb - res.fa;
+
+    // 2단계: 2D 외적(Cross Product)을 이용한 평행 조건 스캐닝
+    // 두 벡터 (g'(t), f'(t)) 와 (chord_dx, chord_dy) 가 평행하려면 (평행 = 기울기 일치 = 변화량 일치 => 비례식)
+    // 외적값: f'(t) * chord_dx - g'(t) * chord_dy == 0 이어야 함 (0으로 나누기 방지!)
+    int steps = 1000;
+    double dt = (b - a) / (double)steps;
+
+    for (int i = 0; i < steps; i++) {
+        double t1 = a + i * dt;
+        double t2 = t1 + dt;
+
+        double cross1 = num_diff_1st(f, t1) * res.chord_dx - num_diff_1st(g, t1) * res.chord_dy;
+        double cross2 = num_diff_1st(f, t2) * res.chord_dx - num_diff_1st(g, t2) * res.chord_dy;
+
+        if (isnan(cross1) || isnan(cross2)) continue;
+
+        // 외적의 부호가 반전되었다면(시계방향 회전 -> 반시계방향 회전), 그 사이에 평행 순간 c 존재
+        // 연속인 이상 어딘가에선 반드시 회전이 멈출거
+        if (cross1 * cross2 <= 0.0 && res.c_count < 32) {
+            double left = t1, right = t2, cl = cross1;
+
+            for (int iter = 0; iter < 35; iter++) {
+                double mid = 0.5 * (left + right);
+                double cm = num_diff_1st(f, mid) * res.chord_dx - num_diff_1st(g, mid) * res.chord_dy;
+
+                if (fabs(cm) < ZERO_EPSILON) {
+                    left = right = mid;
+                    break;
+                }
+                if (cl * cm <= 0.0) {
+                    right = mid;
+                }
+                else {
+                    left = mid;
+                    cl = cm;
+                }
+            }
+
+            double c = 0.5 * (left + right);
+
+            if (c > a + 1e-5 && c < b - 1e-5) {
+                int is_dup = 0;
+                for (int k = 0; k < res.c_count; k++) {
+                    if (fabs(res.c_vals[k] - c) < 1e-4) {
+                        is_dup = 1;
+                        break;
+                    }
+                }
+
+                // 평행 접점 좌표와 그 순간의 속도 벡터 성분 (g'(c), f'(c)) 저장
+                if (!is_dup) {
+                    int idx = res.c_count++;
+                    res.c_vals[idx] = c;
+                    res.gc_vals[idx] = eval_ast(g, c);
+                    res.fc_vals[idx] = eval_ast(f, c);
+                    res.dg_vals[idx] = num_diff_1st(g, c);
+                    res.df_vals[idx] = num_diff_1st(f, c);
+                }
+            }
+        }
+    }
+
+    return res;
+}
+
+//파생함수 VC: 경사하강법
+/*※G.D. 안개낀 야산에서 발바닥 경사만 느끼며 하산하는 알고리즘
+학습량 (보폭)이 너무 크면 분명히 넘어질 것이고 최악의 경우엔 굴러 떨어질 수도 있음
+그렇다고 이게 너무 작으면 느린걸 떠나서, 온 신경을 다리에 집중해야 하니까 에너지는 더욱 빨리 닳음*/
+
+GDTraceResult trace_gradient_descent(
+    const ASTNode* f,
+    double x0,          // 공을 떨어뜨릴 초기 위치
+    double lr,          // 학습률 eta (보폭 크기)
+    int max_steps       // 최대 점프 횟수 (최대 127)
+) {
+    GDTraceResult res;
+    memset(&res, 0, sizeof(GDTraceResult));
+
+    if (f == NULL || max_steps <= 0) return res;
+    if (max_steps > 127) max_steps = 127;
+
+    double curr_x = x0;
+    res.status = 1; // 기본 상태: 최대 스텝까지 진행 중
+
+    for (int i = 0; i < max_steps; i++) {
+        double curr_y = eval_ast(f, curr_x);
+        double grad = num_diff_1st(f, curr_x); // 현재 발밑의 접선 기울기 f'(x_n)
+
+        // [안전장치] 값이 NaN이거나 계곡 밖으로 너무 멀리 튕겨 나가면 '발산(2)' 판정 후 즉시 중단
+        if (isnan(curr_y) || isnan(grad) || fabs(curr_x) > 1e6 || fabs(curr_y) > 1e8) {
+            res.status = 2;
+            break;
+        }
+
+        // 현재 스텝의 위치와 접선 기울기 기록
+        res.x_hist[i] = curr_x;
+        res.y_hist[i] = curr_y;
+        res.grad_hist[i] = grad;
+        res.step_count = i + 1;
+
+        // 접선 기울기가 사실상 0이면 골짜기 바닥(극소점)에 안착 완료 -> '수렴(0)' 판정
+        if (fabs(grad) < 1e-5) {
+            res.secant_hist[i] = 0.0;
+            res.status = 0;
+            break;
+        }
+
+        // [핵심 업데이트 공식] 기울기(grad)의 반대(-) 방향으로 학습률(lr)만큼 이동!
+        double next_x = curr_x - lr * grad;
+        double next_y = eval_ast(f, next_x);
+
+        // 방금 점프한 구간 [curr_x, next_x]의 실제 평균변화율(할선 기울기) 계산
+        // -> 진동/발산 시 출발점 접선(grad)과 실제 평균변화율(secant)의 부호·크기가 어긋나는 걸 포착
+        if (fabs(next_x - curr_x) > ZERO_EPSILON && !isnan(next_y)) {
+            res.secant_hist[i] = (next_y - curr_y) / (next_x - curr_x);
+        }
+        else {
+            res.secant_hist[i] = grad;
+        }
+
+        curr_x = next_x;
+    }
+
+    return res;
