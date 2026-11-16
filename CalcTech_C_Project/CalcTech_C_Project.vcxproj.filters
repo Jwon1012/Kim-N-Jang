@@ -27,18 +27,30 @@
     <ClInclude Include="pch.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="모듈I.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CalcTech_C_Project.cpp">
+    <ClCompile Include="CalcTech_C_Project.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="dllmain.cpp">
+    <ClCompile Include="dllmain.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="pch.cpp">
+    <ClCompile Include="보고서I_예시코드I.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="보고서I_예시코드I.cpp">
+    <ClCompile Include="모듈1-1_test.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈1-2_test.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈 1-3_test..c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="C모듈.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
