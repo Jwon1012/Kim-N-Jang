@@ -18,15 +18,18 @@
     <ClCompile Include="모듈I_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="모듈II_test.c">
+    <ClCompile Include="모듈IIA_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="..\CalcTech_C_Project\보고서I_예시코드I.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="모듈IIB.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="아파트공용두꺼비집.h">
+    <ClInclude Include="CalcTech공용두꺼비집.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>

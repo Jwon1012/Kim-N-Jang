@@ -1,5 +1,4 @@
-﻿#include "아파트공용두꺼비집.h"
-
+﻿#include "CalcTech공용두꺼비집.h"
 const KeywordSpec KEYWORD_TABLE[] = {
     // [0] 상수 키워드 (expected_args = 0, 자식 노드 없음)
     { "inf",       NODE_NUMBER,     0 }, // 무한대 (\infty)
@@ -96,7 +95,7 @@ TokenList tokenize(const char* expr) {
         {
             char buf[256] = { 0 };
             int idx = 0;
-            while ((isdigit((unsigned char)*p) || *p == '.') && idx < 255) buf[idx] = *p++;
+            while ((isdigit((unsigned char)*p) || *p == '.') && idx < 255) buf[idx++] = *p++;
             add_token(&list, TOKEN_NUMBER, buf);
             continue;
         }
@@ -701,7 +700,7 @@ void print_help(void)
     printf("=======================================================================\n");
 }
 
-    int main(void) 
+    int main_I(void) 
     {
     char input[256];
 
