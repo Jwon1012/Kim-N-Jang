@@ -7,7 +7,19 @@
 
 //교점 탐색 및 0 판정 허용 오차 (부동소수점 노이즈 회피)
 #define ZERO_EPSILON  1e-9   // |f(x) - g(x)| < 1e-9 이면 교점으로 인정
-#define MAX_INTERSECTIONS 32
+#define MAX_CRITICAL_POINTS 64
+#define MAX_REGIONS 128
+
+// 경계선 종류 식별 코드 (for 파생함수 IA)
+#define BOUND_FUNC   1  // 원함수 y = f(x)
+#define BOUND_TAN    2  // 접선   y = g_t(x)
+#define BOUND_X_AXIS 3  // x축    y = 0
+
+// 정적분 정의 함수 패턴 식별 코드 (for 파생함수 IB)
+#define DEF_INT_FIXED_START  1  //g(x) = ∫_a^x f(t) dt  (시작점 a 고정)
+#define DEF_INT_SLIDING_WIN  2  // g(x) = ∫_x^(x+h) f(t) dt (폭 h 구간 이동)
+#define DEF_INT_SYMMETRIC    3  //g(x) = ∫_(a-x)^(a+x) f(t) dt (a 기준 대칭 확장)
+
 //공통 표준 라이브러리 모음
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +103,17 @@ typedef struct {
     double y_intercept;  // 접선의 y절편
 } TangentInfo;
 
+// [빵틀 8] 분할된 개별 영역 정보 (파이썬 호버링 & 넓이 표시용)
+typedef struct {
+    int id;          // 영역 고유 번호 (0, 1, 2...)
+    double a;        // 왼쪽 x 경계
+    double b;        // 오른쪽 x 경계
+    int top_type;    // 천장 경계 종류 (BOUND_FUNC / BOUND_TAN / BOUND_X_AXIS)
+    int bot_type;    // 바닥 경계 종류 (BOUND_FUNC / BOUND_TAN / BOUND_X_AXIS)
+    double area;     // 심프슨 법칙으로 계산된 해당 조각의 넓이
+    int is_closed;   // 1이면 교점/축으로 완전히 닫힌 영역, 0이면 화면 끝(x_min/x_max)에 닿은 열린 영역
+} TangentRegion;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -163,34 +186,105 @@ void sample_calculus_arrays(
 
 //IIB: 파생함수 10가지 구현하는 코드
 
-// 파생함수I: 두 함수로 둘러쌓인 넓이함수
-// [1] 접선 정보 계산 및 접선 함수 g_t(x) 평가
-TangentInfo calc_tangent_info(const ASTNode* f, double t);
-double eval_tangent(TangentInfo tan_info, double x);
+/*파생함수 I: 심프슨 the GOAT */
 
-// [2] 곡선 f(x)와 접선 g_t(x)의 교점 자동 탐색 (찾은 교점 개수 반환)
-int find_curve_tangent_intersections(
+//  IA: 곡선과 접선으로 둘러쌓인 넓이
+//  접선 정보 구조체 생성 및 접선의 방정식 계산: g_t(x) = f'(t)(x - t) + f(t)
+TangentInfo calc_tangent_info(const ASTNode* f, double t);
+
+//곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
+double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
+
+// 범용 심프슨 1/3 적분기: 어떤 경계 조합이든 |top(x) - bot(x)| 적분
+double integrate_between_bounds(
+    const ASTNode* f,
+    TangentInfo tan_info,
+    double a,
+    double b,
+    int top_type,
+    int bot_type,
+    int steps
+);
+
+// [내부 도우미] 중복 없이 핵심 x좌표 추가 & 이분법 근 탐색
+static void add_unique_point(double* arr, int* count, double val, double x_min, double x_max);
+
+
+// 교점 탐색기
+// mode == 0: 곡선과 접선의 교점 탐색, mode == 1: 곡선과 x축의 교점 탐색 탐색
+static void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
+    double x_min, double x_max, double* pts, int* count);
+
+// 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
+int partition_tangent_regions(
     const ASTNode* f,
     TangentInfo tan_info,
     double x_min,
     double x_max,
-    double* out_roots,
-    int max_roots
+    TangentRegion* out_regions,
+    int max_regions
 );
 
-// [3] 심프슨 1/3 법칙 기반 두 함수 사이의 넓이 계산
-double integrate_abs_diff_two_funcs(const ASTNode* f, const ASTNode* g, double a, double b, int steps);
-double integrate_abs_diff_tangent(const ASTNode* f, TangentInfo tan_info, double a, double b, int steps);
-
-// [4] [PIP 메인 커널] 접점 t 이동에 따른 선택 영역의 넓이 변화 함수 S(t) 배열 생성
+//[★ PIP 파생함수] t 이동에 따른 선택 영역 넓이 변화 함수 S(t) 생성
 void generate_tangent_area_S(
     const ASTNode* f,
     double t_min,
     double t_max,
     double x_min,
     double x_max,
-    int region_idx,   // 사용자가 클릭해 선택한 구역 번호 (0, 1, 2...)
-    int count,        // 샘플링 개수 (기본 2000)
-    double* out_t,    // 출력 버퍼 1: t 좌표 배열
-    double* out_S     // 출력 버퍼 2: 넓이 S(t) 배열
+    int target_region_id,
+    int count,
+    double* out_t,
+    double* out_S
+);
+
+//파생함수 IB: 구간 누적 & 이동 적분
+
+// 기존에 있던 함수에는 절댓값 옵션이 존재하지 않았음
+static double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs);
+
+//g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
+void generate_def_integral_array(
+    const ASTNode* f,
+    double x_min,
+    double x_max,
+    int mode, //패턴 1(시작점 고정 a~x), 패턴 2(구간 이동 x~x+h), 패턴 3(대칭 구간 a-x~a+x), 
+    //위/아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
+    double param, //패턴 1, 3에서는 기준점 'a', 패턴 2에서는 구간 폭 'h'
+    int is_abs, //0이면 순수 정적분(부호 유지), 1이면 기하학적 넓이(| f(t) | )
+    int count,
+    double* out_x,
+    double* out_g
+);
+
+//파생함수 IC: 특이함수 정적분& 이상적분
+// 제2종: 점근선 같은 구간을 피한 이상적분
+static double improper_integral_II(const ASTNode* f, double a, double b, int steps);
+
+// 제1종: a~x를 정적분한 후 a를 극한으로 보내는 적분
+// - 변수 치환 x = a + u / (1 - u) 를 통해 [a, ∞) 구간을 유한 구간 [0, 1)로 압축하여 적분
+double imporoper_integral_I(const ASTNode* f, double a, int steps);
+
+//또 심프슨 법칙이야. 우린 숭배해야만해
+void generate_func_bounds_integral_array(
+    const ASTNode* f,
+    const ASTNode* alpha, // 아래끝 함수 α(x)
+    const ASTNode* beta,  // 위끝 함수 β(x)
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,
+    double* out_g
+);
+
+/*파생함수 II : 접점 t 이동에 따른 접선의 절편& 축 삼각형 넓이 변화*/
+void generate_tangent_intercepts_array(
+    const ASTNode* f,
+    double t_min,
+    double t_max,
+    int count,
+    double* out_t,
+    double* out_x_int, //접선의 x절편 X(t) = t - f(t) / f'(t) 배열 (수평 접선 구간은 NAN)
+    double* out_y_int, //접선의 y절편 Y(t) = f(t) - t*f'(t) 배열
+    double* out_tri_area //접선과 x축, y축이 이루는 직각삼각형 넓이 0.5 * |X(t) * Y(t)| 배열
 );
