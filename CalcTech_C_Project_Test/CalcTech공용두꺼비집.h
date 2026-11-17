@@ -120,6 +120,86 @@ typedef struct {
   double x_val; // 속함수 g(x) = t의 실근좌표
 } CompositeRootPath;
 
+// [빵틀 10] 접선의 기울기를 계속 뽑아내는 빵틀
+ typedef struct {
+     double t;          // 현재 기준 x좌표
+     double ft;         // 원함수 높이 f(t)
+     double dft;        // 1차 접선 기울기 f'(t) == PIP 1의 함숫값
+     double d2ft;       // 2차 접선 기울기 f''(t) == PIP 2의 함숫값
+     double tan1_y_int; // 원함수 접선의 y절편: f(t) - t * f'(t)
+     double tan2_y_int; // 도함수 접선의 y절편: f'(t) - t * f''(t)
+ } CascadeDerivativePoint;
+
+ //별명등록 ∵너무 길어..
+ typedef CascadeDerivativePoint CDP;
+
+// [빵틀 11] 라그랑주 MVT 전용 빵틀
+ typedef struct {
+     double a, b;            // 구간 양 끝점
+     double fa, fb;          // 양 끝점 함숫값
+     double secant_slope;    // 할선 평균변화율: (f(b) - f(a)) / (b - a)
+     double secant_y_int;    // 할선 y절편: f(a) - a * secant_slope
+     double max_abs_deriv;   // 구간 내 |f'(x)| 최댓값 M (립시츠/오차 한계 상수)
+     int c_count;            // 발견된 평균값 정리 만족점 c의 개수
+     double c_vals[32];      // 만족점 c의 x좌표 배열
+     double fc_vals[32];     // 만족점에서의 함숫값 f(c) 배열
+     double tan_y_ints[32];  // 각 c에서의 평행 접선 y절편 배열
+ } MVTResult;
+
+ // [빵틀 12] 코시 MVT 전용 빵틀
+ typedef struct {
+     double a, b;            // 매개변수 t의 시작/끝 구간 [a, b]
+     double ga, fa;          // 출발점 좌표 (g(a), f(a))
+     double gb, fb;          // 도착점 좌표 (g(b), f(b))
+     double chord_dx;        // 전체 이동 벡터 x성분: g(b) - g(a)
+     double chord_dy;        // 전체 이동 벡터 y성분: f(b) - f(a)
+     int c_count;            // 두 벡터가 평행해지는 순간 c의 총개수
+     double c_vals[32];      // 만족 매개변수 t = c 목록
+     double gc_vals[32];     // 평행 접점의 x좌표 g(c)
+     double fc_vals[32];     // 평행 접점의 y좌표 f(c)
+     double dg_vals[32];     // 그 순간의 속도 벡터 x성분 g'(c) (파이썬 화살표 그리기용)
+     double df_vals[32];     // 그 순간의 속도 벡터 y성분 f'(c) (파이썬 화살표 그리기용)
+ } CauchyMVTResult;
+ typedef CauchyMVTResult Cauchy;
+
+ // [빵틀 13] G.D. 전용 빵틀
+
+ typedef struct {
+     int step_count;          // 실제 이동한 총 스텝 수 (발산 시 조기 중단된 시점까지)
+     int status;              // 0: 극소점 수렴 성공 | 1: 최대 스텝 도달(진동 중) | 2: 발산(폭주)
+     double x_hist[128];      // 매 스텝 공의 x좌표 (x_0, x_1, ..., x_n)
+     double y_hist[128];      // 매 스텝 공의 높이 f(x_n)
+     double grad_hist[128];   // 출발점 발밑의 순간변화율(접선 기울기) f'(x_n)
+     double secant_hist[128]; // 실제 점프한 구간 [x_n, x_{n+1}]의 평균변화율(할선 기울기)
+ } GDTraceResult;
+
+ // [빵틀 14] 곡선의 길이(호의 길이) 통합 분석 결과 빵틀
+ typedef struct {
+     double a, b;              // 구간 양 끝점
+     double total_length;      // 전체 곡선 길이 L = ∫_a^b sqrt(1 + f'(x)^2) dx
+     double chord_length;      // 양 끝점을 잇는 직선 현의 길이 sqrt((b-a)^2 + (f(b)-f(a))^2)
+     double tortuosity;        // 굴곡도(우회율) = total_length / chord_length (직선이면 1.0)
+     int div_count;            // 등분할 점 개수 (최대 64)
+     double eq_x[64];          // 호의 길이를 등분할하는 점들의 x좌표
+     double eq_y[64];          // 호의 길이를 등분할하는 점들의 y좌표 f(x)
+ } ArcLengthResult;
+ typedef ArcLengthResult ALR;
+
+ // [빵틀 15] 뉴턴-랩슨 전용 빵틀
+ typedef struct {
+     int iter_count;          // 실제 수행한 반복 횟수 (최대 63)
+     int status;              // 0: 근 수렴 성공 | 1: 최대 반복 도달(진동/느린 수렴) | 2: 발산(접선 수평 f'(x)≈0 또는 폭주)
+     double root;             // 최종 수렴한 근 (수렴 실패 시 마지막 x값)
+     double x_hist[64];       // 각 스텝의 x좌표 (x_0, x_1, ..., x_n)
+     double hx_hist[64];      // 차이 함수 높이 h(x_n) = f(x_n) - g(x_n)
+     double fx_hist[64];      // 원함수 높이 f(x_n) (메인 캔버스 교점 표시용)
+     double gx_hist[64];      // 비교함수 높이 g(x_n) (g가 NULL이면 0.0)
+     double slope_hist[64];   // 각 스텝에서의 접선 기울기 h'(x_n)
+ } NewtonTraceResult;
+
+ typedef NewtonTraceResult NewtonTrace;
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -213,12 +293,12 @@ double integrate_between_bounds(
 );
 
 // [내부 도우미] 중복 없이 핵심 x좌표 추가 & 이분법 근 탐색
-static void add_unique_point(double* arr, int* count, double val, double x_min, double x_max);
+  void add_unique_point(double* arr, int* count, double val, double x_min, double x_max);
 
 
 // 교점 탐색기
 // mode == 0: 곡선과 접선의 교점 탐색, mode == 1: 곡선과 x축의 교점 탐색 탐색
-static void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
+  void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
     double x_min, double x_max, double* pts, int* count);
 
 // 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
@@ -247,7 +327,7 @@ void generate_tangent_area_S(
 //파생함수 IB: 구간 누적 & 이동 적분
 
 // 기존에 있던 함수에는 절댓값 옵션이 존재하지 않았음
-static double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs);
+  double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs);
 
 //g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
 void generate_def_integral_array(
@@ -265,11 +345,11 @@ void generate_def_integral_array(
 
 //파생함수 IC: 특이함수 정적분& 이상적분
 // 제2종: 점근선 같은 구간을 피한 이상적분
-static double improper_integral_II(const ASTNode* f, double a, double b, int steps);
+  double improper_integral_II(const ASTNode* f, double a, double b, int steps);
 
 // 제1종: a~x를 정적분한 후 a를 극한으로 보내는 적분
 // - 변수 치환 x = a + u / (1 - u) 를 통해 [a, ∞) 구간을 유한 구간 [0, 1)로 압축하여 적분
-double imporoper_integral_I(const ASTNode* f, double a, int steps);
+double improper_integral_I(const ASTNode* f, double a, int steps);
 
 //또 심프슨 법칙이야. 우린 숭배해야만해
 void generate_func_bounds_integral_array(
@@ -311,3 +391,114 @@ void generate_composite_n_axis_arrays(
 );
 
 //합성 방정식의 실근 역추적 & 합성 부등식의 범위 스캐닝
+
+// [내부 도우미] 일반 함수방정식 h(u) = target 의 실근을 함수의 정의역 에서 모두 탐색
+ int scan_equation_roots(
+    const ASTNode* func,
+    double target, //f(g(x)) = k에서 g(x)를 t로 치환하여 g(x) = t라는 방정식에서는 t가 target, f(t) = k에선 k가 target
+    double u_min,
+    double u_max,
+    double* out_roots, //실근을 담는 바구니
+    int max_roots
+);
+
+//  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
+//  반환값: 찾아낸 전체 실근 x의 총개수
+ int solve_composite_equation_n_axis(
+     const ASTNode* f, // 겉함수 f(t)
+     const ASTNode* g, // 속함수 g(x)
+     double k,         // 우변 상수 k (f(g(x)) = k)
+     double t_min,
+     double t_max,
+     double x_min,
+     double x_max,
+     CompositeRootPath* out_paths,
+     int max_paths
+ );
+
+// 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
+void scan_composite_inequality(
+    const ASTNode* f,
+    const ASTNode* g,
+    double k,
+    int op_type, //0 (> ), 1 (>= ), 2 (< ), 3 (<= )
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,
+    int* out_mask // out_mask[i]: 부등식을 만족하면 1, 아니면 0 (파이썬에서 x축 형광 하이라이트용)
+);
+
+/*파생함수 IV: 원함수 -> 도함수 -> 이계도함수 서브캔버스 연동*/
+// [내부 도우미] 2계 도함수 f''(x) 수치 계산 (중심차분)
+double num_diff_2nd(const ASTNode* f, double x);
+
+// 슬라이더 이동 시 현재 위치 t에서의 [원함수 접선] & [도함수 접선] 정보 일괄 추출
+CDP calc_cascade_derivative_at(const ASTNode* f, double t);
+
+// PIP 1(f') 및 PIP 2(f'') 배경 곡선 배열 생성
+void generate_cascade_derivative_arrays(
+    const ASTNode* f,
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,
+    double* out_df,
+    double* out_d2f
+);
+
+//파생함수 V: MVT의 기하적 구현
+
+// 함수의 최대속도 찾는 라그랑주 MVT
+MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
+// 두 함수의 변화율을 비유하는 코시 MVT, 극한 넣으면 로피탈 정리 뚝딱
+Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b);
+// 안개가 자욱한 야산에서 안전하게 하산하려는 G.D.
+GDTraceResult trace_gradient_descent(
+    const ASTNode* f,
+    double x0,          // 공을 떨어뜨릴 초기 위치
+    double lr,          // 학습률 eta (보폭 크기)
+    int max_steps       // 최대 점프 횟수 (최대 127)
+);
+
+
+//파생함수 VI: 곡선의 길이
+// 호의 길이 추적
+
+// [내부 도우미] 미소 길이 요소 ds/dx = sqrt(1 + (f'(x))^2) 계산
+double eval_arc_speed(const ASTNode* f, double x);
+// 단일 구간 [a, b]의 정확한 곡선 전체 길이 L 계산 (심프슨 1/3 법칙)
+double calc_arc_length(const ASTNode* f, double a, double b, int steps);
+// [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
+void generate_arc_length_arrays(
+    const ASTNode* f,
+    double a,           // 길이 측정 시작 기준점 x = a
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,      // 가로축 x좌표 배열
+    double* out_s,      // 누적 곡선 길이 s(x) 배열
+    double* out_chord   // 시작점 (a, f(a))와 현재 점 (x, f(x)) 사이의 직선 거리 배열
+);
+
+//곡선의 길이를 N등분하는 좌표 추출 및 굴곡도(Tortuosity) 분석
+ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
+
+// 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
+// [내부 도우미] 매개변수 곡선 순간 속력 v(t) = sqrt((g'(t))^2 + (f'(t))^2)
+double eval_param_speed(const ASTNode* f, const ASTNode* g, double t);
+// 단일 매개변수 구간 [t1, t2]의 곡선 궤적 길이 계산 (심프슨 1/3 법칙)
+double calc_param_arc_length(const ASTNode* f, const ASTNode* g, double t1, double t2, int steps);
+// [PIP 파생함수] 매개변수 t에 따른 궤적 좌표 (x(t), y(t)), 순간 속력 v(t), 누적 이동 거리 s(t) 생성
+void generate_param_arc_arrays(
+    const ASTNode* f,   // y(t) 수식 트리
+    const ASTNode* g,   // x(t) 수식 트리
+    double t_min,
+    double t_max,
+    int count,
+    double* out_t,      // 매개변수 t 배열
+    double* out_x,      // 궤적 x(t) = g(t) 배열
+    double* out_y,      // 궤적 y(t) = f(t) 배열
+    double* out_speed,  // 순간 속력 v(t) = sqrt(g'(t)^2 + f'(t)^2) 배열
+    double* out_s       // 누적 이동 궤적 길이 s(t) = ∫_{t_min}^t v(u) du 배열
+);
