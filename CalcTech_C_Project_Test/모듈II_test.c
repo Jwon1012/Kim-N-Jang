@@ -638,7 +638,7 @@ double improper_integral_I(const ASTNode* f, double a, int steps) {
         double denom = 1.0 - u;
         double x = a + (u / denom);
         double jacobian = 1.0 / (denom * denom); // dx/du = 1 / (1-u)^2
-        //길이가 무한대인 고무줄을 0.xx길이에 억지로 쑤셔넣었으니 1에 가까워질수록 간격을 훨씬 촘촘해짐
+        //길이가 무한대인 고무줄을 0.xx길이에 억지로 쑤셔넣었으니 1에 가까워질수록 간격은 훨씬 촘촘해짐
         double fx = eval_ast(f, x);
         if (isnan(fx) || isinf(fx)) return NAN;
 
