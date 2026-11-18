@@ -30,9 +30,7 @@ double eval_ast(const ASTNode* node, double x)
     if (node->type == NODE_BINARY_OP)
     {
         // 단항 마이너스 처리 (모듈 I에서 left == NULL 로 저장됨)
-        if (node->left == NULL && strcmp(node->value, "-") == 0) {
-            return -eval_ast(node->right, x);
-        }
+        if (node->left == NULL && strcmp(node->value, "-") == 0) return -eval_ast(node->right, x);
 
         double L = eval_ast(node->left, x);
         double R = eval_ast(node->right, x);
@@ -40,7 +38,7 @@ double eval_ast(const ASTNode* node, double x)
         if (strcmp(node->value, "+") == 0) return L + R;
         if (strcmp(node->value, "-") == 0) return L - R;
         if (strcmp(node->value, "*") == 0) return L * R;
-        if (strcmp(node->value, "/") == 0) return (fabs(R) < 1e-15) ? NAN : (L / R);
+        if (strcmp(node->value, "/") == 0) return (fabs(R) < 1e-15) ? NAN : (L / R); //0으로 나누는 경우 제외
         if (strcmp(node->value, "^") == 0) return pow(L, R);
         return NAN;
     }
@@ -49,19 +47,14 @@ double eval_ast(const ASTNode* node, double x)
     if (node->type == NODE_FUNCTION)
     {
         const char* fn = node->value;
-        if (strcmp(fn, "prime") == 0) {
-            return num_diff_1st(node->left, x);
-        }
-
+        if (strcmp(fn, "prime") == 0) return num_diff_1st(node->left, x);
         double v = eval_ast(node->left, x);
         if (isnan(v)) return NAN;
-
         if (strcmp(fn, "exp") == 0)  return exp(v);
         if (strcmp(fn, "ln") == 0)   return (v <= 0.0) ? NAN : log(v);
         if (strcmp(fn, "log") == 0)  return (v <= 0.0) ? NAN : log10(v); //밑이 0인 로그는 존재할 수 없음
         if (strcmp(fn, "abs") == 0)  return fabs(v);
         if (strcmp(fn, "sqrt") == 0) return (v < 0.0) ? NAN : sqrt(v); //알맹이가 음수인 루트는 실수에선 존재할 수 없음
-
         // 삼각함수 및 역수
         if (strcmp(fn, "sin") == 0)  return sin(v);
         if (strcmp(fn, "cos") == 0)  return cos(v);
@@ -69,7 +62,6 @@ double eval_ast(const ASTNode* node, double x)
         if (strcmp(fn, "sec") == 0)  return 1.0 / cos(v);
         if (strcmp(fn, "csc") == 0)  return 1.0 / sin(v);
         if (strcmp(fn, "cot") == 0)  return 1.0 / tan(v);
-
         // 역삼각함수
         if (strcmp(fn, "asin") == 0) return asin(v);
         if (strcmp(fn, "acos") == 0) return acos(v);
@@ -77,7 +69,6 @@ double eval_ast(const ASTNode* node, double x)
         if (strcmp(fn, "asec") == 0) return acos(1.0 / v);
         if (strcmp(fn, "acsc") == 0) return asin(1.0 / v);
         if (strcmp(fn, "acot") == 0) return atan(1.0 / v);
-
         // 쌍곡선함수
         if (strcmp(fn, "sinh") == 0) return sinh(v);
         if (strcmp(fn, "cosh") == 0) return cosh(v);
@@ -99,14 +90,14 @@ double eval_ast(const ASTNode* node, double x)
         {
             double base = eval_ast(node->args[0], x); //밑
             double val = eval_ast(node->args[1], x); //진수
-            if (base <= 0.0 || base == 1.0 || val <= 0.0) return NAN; //로그의 정의조건
+            if (base <= 0.0 || base == 1.0 || val <= 0.0) return NAN; //로그의 정의조건 예외처리
             return log(val) / log(base);
         }
         if (strcmp(op, "diff") == 0 && node->arg_count == 3)
         {
             int order = (int)eval_ast(node->args[2], x);
-            if (order == 1) return num_diff_1st(node->args[0], x);
-            if (order == 2) return num_diff_2nd(node->args[0], x);
+            if (order == 1) return num_diff_1st(node->args[0], x); //1계미분
+            if (order == 2) return num_diff_2nd(node->args[0], x); //2계미분
         }
         if (strcmp(op, "int") == 0 && node->arg_count == 4)
         {
@@ -1405,8 +1396,8 @@ double eval_diff_deriv(const ASTNode* f, const ASTNode* g, double x) {
     if (isnan(dg)) return NAN;
     return df - dg;
 }
-// - g == NULL 이면 방정식 f(x) = 0 의 근 탐색
-// - g != NULL 이면 두 곡선 f(x) = g(x) 의 교점 탐색 (예: 2^x = x + 2)
+// g == NULL 이면 방정식 f(x) = 0 의 근 탐색
+// g != NULL 이면 두 곡선 f(x) = g(x) 의 교점 탐색 (예: 2^x = x + 2)
 NewtonTrace trace_newton_raphson(
     const ASTNode* f,
     const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
@@ -1414,8 +1405,8 @@ NewtonTrace trace_newton_raphson(
     int max_iter        // 최대 반복 횟수 (최대 63)
 ) {
     NewtonTrace res;
-    memset(&res, 0, sizeof(NewtonTrace));
-    res.root = NAN;
+    memset(&res, 0, sizeof(NewtonTrace)); //memory reset: NewtonTrace라는 빵틀을 빡빡 설거지해서 비우는 함수
+    res.root = NAN; 
 
     if (f == NULL || isnan(x0) || max_iter <= 0) {
         res.status = 2;
@@ -1426,7 +1417,7 @@ NewtonTrace trace_newton_raphson(
     double curr_x = x0;
     res.status = 1; // 기본값: 최대 반복 횟수 도달
 
-    for (int i = 0; i < max_iter; i++) {
+    for (int i = 0; i < max_iter; i++) { //f,g,h,h' 세팅
         double fx = eval_ast(f, curr_x);
         double gx = (g != NULL) ? eval_ast(g, curr_x) : 0.0;
         double hx = eval_diff_func(f, g, curr_x);
@@ -1477,8 +1468,6 @@ NewtonTrace trace_newton_raphson(
 }
 
 
-//파생함수 VIII: 
-// 
 // 파생함수 VIII:테일러급수로 초월함수 근사 (최대 14차) & 잔여 오차 추적
 TaylorResult generate_taylor_approx_arrays(
     const ASTNode* f,
@@ -1554,13 +1543,17 @@ FDS build_central_diff_stencil(int order) {
         return st;
     }
 
-    // 차수가 높아질수록 분모 h^k 의 부동소수점 언더플로우를 막기 위해 h를 동적으로 키움
+    // 차수가 높아질수록 분모 h^k 의 부동소수점 언더플로우를 막기 위해 보폭 h를 동적으로 키움
+    // 현미경에서 생물을 관찰할때 같은 배율로 관찰하면 작은 생물은 안보이고, 큰 생물은 이게 생물인지 아닌지 구별 못하는거랑 같은 원리
     // (k=1일 때 ~1e-5, k=4일 때 ~0.01, k=10일 때 ~0.08, k=14일 때 ~0.14)
     st.step_h = pow(1e-15, 1.0 / (double)(order + 2));
 
     if (order % 2 == 0) {
         // [짝수 차수 k = 2m] 대칭 반경 R = k / 2, 총 k + 1개 점 사용
         // 공식: f^(k)(a) ≈ (1 / h^k) * Σ_{j=0}^{k} (-1)^j * C(k, j) * f(a + (k/2 - j)h)
+      
+        // e.g. k = 2 -> [1, -2, 1] k = 3 -> [1, -4, 6, -4, 1] 
+        // 위의 가중치를 가운데 식 f(a)를 기준으로 h만큼 a를 옮긴 함숫값에다가 가중치를 곱함
         int R = order / 2;
         st.radius = R;
 
@@ -1575,6 +1568,7 @@ FDS build_central_diff_stencil(int order) {
     else {
         // [홀수 차수 k = 2m + 1] 대칭성을 맞추기 위해 반경 R = (k + 1) / 2, 총 k + 2개 점 사용
         // 공식: (k-1)차 중앙 차분에 1차 중앙 차분 (f(x+h) - f(x-h)) / (2h) 를 합성(Convolution)
+        // 홀수 차수는 공식을 적용할 수 없어서 어떤 식을 곱한 다음 짝수 차수로 만듦
         int m = order - 1; // 짝수 차수
         int R = (order + 1) / 2;
         st.radius = R;
@@ -1637,8 +1631,8 @@ double eval_taylor_poly(const TaylorResult* tr, double x) {
 //파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
 
 // [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
-// - 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
-// - 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
+// 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
+// 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
 int generate_inverse_curve_arrays(
     const ASTNode* f,
     double x_min,
@@ -1661,7 +1655,7 @@ int generate_inverse_curve_arrays(
         double y = eval_ast(f, x);
         double dy = num_diff_1st(f, x);
 
-        if (out_orig_x) out_orig_x[i] = x;
+        if (out_orig_x) out_orig_x[i] = x; 
         if (out_orig_y) out_orig_y[i] = y;
 
         // y = x 대칭 투영: (x, y) -> (y, x)
@@ -1745,7 +1739,13 @@ IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double 
 }
 
 // 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적
+// ※곡률: 운전하다 커브를 꺾을때 핸들의 꺾임 정도, 접촉원: 꺾인 상태로 한바퀴 돌때 나오는 원
+
 // [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
+//특정 점 t에서 원 하나를 그리는 func
+// 1. 곡률 κ(t) = |f''(t)| / (1 + f'(t)^2)^(3/2) : 2계 미분(휘어짐)을 기울기 길이로 보정
+// 2. 변곡점 방어: f''(t) ≈ 0 이면 직선 구간이므로 반지름 R = 1/κ 가 무한대로 발산 -> NAN 처리
+// 3. 접촉원 중심 (cx, cy): 접점 (t, f(t))에서 접선의 수직(법선) 안쪽으로 반지름 R만큼 이동한 좌표
 OscCircle calc_osculating_circle_at(const ASTNode* f, double t) {
     OscCircle res;
     memset(&res, 0, sizeof(OscCircle));
@@ -1757,7 +1757,7 @@ OscCircle calc_osculating_circle_at(const ASTNode* f, double t) {
     double df = num_diff_1st(f, t);
     double d2f = num_diff_2nd(f, t);
 
-    if (isnan(res.ft) || isnan(df) || isnan(d2f)) {
+    if (isnan(res.ft) || isnan(df) || isnan(d2f)) { //예외처리
         res.curvature = NAN;
         res.radius = NAN;
         res.center_x = NAN;
@@ -1784,9 +1784,9 @@ OscCircle calc_osculating_circle_at(const ASTNode* f, double t) {
     }
 
     return res;
-}
+} 
 
-// [PIP 파생함수 X-2] 구간 전체에 대한 곡률 함수 κ(x) 및 곡률반지름 R(x) 배열 생성
+// [PIP 파생함수 X-2] 실제 캔버스로 그리기 위한 구간 전체의 곡률 함수 κ(x) & 곡률반지름 R(x) 배열 생성
 void generate_curvature_array(
     const ASTNode* f,
     double x_min,

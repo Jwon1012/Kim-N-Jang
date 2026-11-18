@@ -20,6 +20,9 @@
 #define DEF_INT_SLIDING_WIN  2  // g(x) = ∫_x^(x+h) f(t) dt (폭 h 구간 이동)
 #define DEF_INT_SYMMETRIC    3  //g(x) = ∫_(a-x)^(a+x) f(t) dt (a 기준 대칭 확장)
 
+//테일러 급수 최대 미분 횟수 (for 파생함수 VIII)
+#define MAX_TAYLOR_DEGREE 14
+
 //공통 표준 라이브러리 모음
 #include <stdio.h>
 #include <stdlib.h>
@@ -163,7 +166,6 @@ typedef struct {
  typedef CauchyMVTResult Cauchy;
 
  // [빵틀 13] G.D. 전용 빵틀
-
  typedef struct {
      int step_count;          // 실제 이동한 총 스텝 수 (발산 시 조기 중단된 시점까지)
      int status;              // 0: 극소점 수렴 성공 | 1: 최대 스텝 도달(진동 중) | 2: 발산(폭주)
@@ -196,9 +198,49 @@ typedef struct {
      double gx_hist[64];      // 비교함수 높이 g(x_n) (g가 NULL이면 0.0)
      double slope_hist[64];   // 각 스텝에서의 접선 기울기 h'(x_n)
  } NewtonTraceResult;
-
  typedef NewtonTraceResult NewtonTrace;
 
+ // [빵틀 16] k계 도함수 중앙 차분 가중치 테이블 전용 빵틀
+ typedef struct {
+     int order;               // 미분 차수 k (0 ~ 14)
+     int radius;              // 좌우 샘플링 반경 R (총 2R + 1개 점 사용)
+     double step_h;           // 해당 차수에 최적화된 스텝 크기 h
+     double weights[32];      // 중앙 차분 가중치 w_j (j = -R ~ +R 를 0 ~ 2R 인덱스에 매핑)
+ } FiniteDiffStencil;
+ typedef FiniteDiffStencil FDS;
+
+ // [빵틀 17] 테일러 급수 근사 결과 빵틀 (최대 14차까지 확장)
+ typedef struct {
+     double center_a;                       // 전개 기준점 a
+     int degree;                            // 근사 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
+     double derivs[MAX_TAYLOR_DEGREE + 1];  // k계 도함수 값 f^(k)(a)
+     double coeffs[MAX_TAYLOR_DEGREE + 1];  // 테일러 계수 c_k = f^(k)(a) / k!
+     double max_error;                      // 구간 내 최대 잔여 오차 max |f(x) - P_n(x)|
+ } TaylorResult;
+
+ // [빵틀 18] 역함수 투영 및 역함수 미분법 연동 결과 빵틀
+ typedef struct {
+     int is_monotonic;        // 1: 구간 내 순증가/순감소 (역함수 단일 함수 존재) | 0: 극값 (도함수의 부호 변화)존재 
+     int monotone_dir;        // 1: 순증가, -1: 순감소, 0: 비단조 (변곡점 존재 또는 상수함수)
+     double t;                // 원함수 기준 x좌표 t
+     double ft;               // 원함수 y좌표 f(t) == 역함수의 입력 x좌표
+     double df_t;             // 원함수 접선 기울기 f'(t)
+     double inv_df_ft;        // 역함수 대칭점 (f(t), t)에서의 접선 기울기 1 / f'(t) (수직 접선 시 NAN)
+     double orig_tan_y_int;   // 원함수 접선의 y절편: f(t) - t * f'(t)
+     double inv_tan_y_int;    // 역함수 접선의 y절편: t - f(t) * (1 / f'(t)) (수직 접선 시 NAN)
+ } InverseDerivInfo;
+ typedef InverseDerivInfo IDI;
+
+ // [빵틀 19] 특정 접점 t에서의 곡률 및 접촉원(Osculating Circle) 정보 빵틀
+ typedef struct {
+     double t;                // 기준 접점의 x좌표
+     double ft;               // 기준 접점의 y좌표 f(t)
+     double curvature;        // 곡률 κ(t) = |f''(t)| / (1 + f'(t)^2)^(3/2)
+     double radius;           // 곡률반지름 R(t) = 1 / κ(t) (변곡점 등 직선 구간은 NAN)
+     double center_x;         // 접촉원 중심의 x좌표 (변곡점 구간은 NAN)
+     double center_y;         // 접촉원 중심의 y좌표 (변곡점 구간은 NAN)
+ } OsculatingCircleInfo;
+ typedef OsculatingCircleInfo OscCircle;
 
 #ifdef __cplusplus
 extern "C" {
@@ -244,13 +286,10 @@ void append_str(char* buf, size_t max_len, const char* str);
 // ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
 void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
 
-#ifdef __cplusplus
-}
-#endif
-
 //모듈II: 모듈I에서 생성한 수식의 그래프를 수학적으로 다루는 툴 모음집
 
 // IIA: C언어로 미분적분 구현하는 코드
+
 // [1] 사용자가 입력한 수식을 진짜로 계산하는 함수
 double eval_ast(const ASTNode* node, double x);
 // [2] 단일 점 수치 미분 (1계, 2계 중앙 차분법)
@@ -258,7 +297,7 @@ double num_diff_1st(const ASTNode* root, double x);
 double num_diff_2nd(const ASTNode* root, double x);
 // [3] 단일 구간 정적분 (심프슨 1/3 법칙)
 double num_integrate(const ASTNode* root, double a, double b, int steps);
-// [4] 2000개 격자 일괄 샘플링 커널 (원함수, 1계도함수, 2계도함수, 누적정적분 배열 동시 생성)
+// [4] 계산된 값을 2000개의 배열에다가 파바박 집어넣는 함수
 void sample_calculus_arrays(
     const ASTNode* root, //모듈I이 만든 수식 트리
     double x_min, //x축 시작점
@@ -268,7 +307,7 @@ void sample_calculus_arrays(
     double* out_y, // 버퍼 II: x에 대한 함숫값 배열
     double* out_dy, // 버퍼 III: 1계도함수 배열
     double* out_d2y, //버퍼 IV: 2계도함수 배열
-    double* out_int_y); //버퍼 V: 누정 정적분 배열
+    double* out_int_y); //버퍼 V: 누적 정적분 배열
 
 //IIB: 파생함수 10가지 구현하는 코드
 
@@ -294,7 +333,6 @@ double integrate_between_bounds(
 
 // [내부 도우미] 중복 없이 핵심 x좌표 추가 & 이분법 근 탐색
   void add_unique_point(double* arr, int* count, double val, double x_min, double x_max);
-
 
 // 교점 탐색기
 // mode == 0: 곡선과 접선의 교점 탐색, mode == 1: 곡선과 x축의 교점 탐색 탐색
@@ -335,7 +373,7 @@ void generate_def_integral_array(
     double x_min,
     double x_max,
     int mode, //패턴 1(시작점 고정 a~x), 패턴 2(구간 이동 x~x+h), 패턴 3(대칭 구간 a-x~a+x), 
-    //위/아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
+    //위아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
     double param, //패턴 1, 3에서는 기준점 'a', 패턴 2에서는 구간 폭 'h'
     int is_abs, //0이면 순수 정적분(부호 유지), 1이면 기하학적 넓이(| f(t) | )
     int count,
@@ -363,7 +401,7 @@ void generate_func_bounds_integral_array(
     double* out_g
 );
 
-/*파생함수 II : 접점 t 이동에 따른 접선의 절편& 축 삼각형 넓이 변화*/
+/*파생함수 II : 접점 t 이동에 따른 접선의 절편 & 축 삼각형 넓이 변화*/
 void generate_tangent_intercepts_array(
     const ASTNode* f,
     double t_min,
@@ -378,7 +416,6 @@ void generate_tangent_intercepts_array(
 /*파생함수 III: 합성함수*/
 
 //N축 기반 합성함수 개형 추론
-
 void generate_composite_n_axis_arrays(
     const ASTNode* f, // 겉함수 f(t)
     const ASTNode* g, // 속함수 g(x)
@@ -417,6 +454,7 @@ void generate_composite_n_axis_arrays(
  );
 
 // 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
+// 마스크: 조건을 만족시키는 칸은 1(통과), 그렇지 않은 칸은 0(빠꾸)로 분류하는 채점표 배열
 void scan_composite_inequality(
     const ASTNode* f,
     const ASTNode* g,
@@ -485,6 +523,9 @@ void generate_arc_length_arrays(
 ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
 
 // 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
+
+
+
 // [내부 도우미] 매개변수 곡선 순간 속력 v(t) = sqrt((g'(t))^2 + (f'(t))^2)
 double eval_param_speed(const ASTNode* f, const ASTNode* g, double t);
 // 단일 매개변수 구간 [t1, t2]의 곡선 궤적 길이 계산 (심프슨 1/3 법칙)
@@ -502,3 +543,83 @@ void generate_param_arc_arrays(
     double* out_speed,  // 순간 속력 v(t) = sqrt(g'(t)^2 + f'(t)^2) 배열
     double* out_s       // 누적 이동 궤적 길이 s(t) = ∫_{t_min}^t v(u) du 배열
 );
+
+//파생함수 VII: 뉴턴-랩슨법으로 교점 탐색 & 접선 궤적 추적
+
+// [내부 도우미] 차함수 h(x) = f(x) - g(x) 계산 (g가 NULL이면 단일 함수 f(x) = 0 모드)
+double eval_diff_func(const ASTNode* f, const ASTNode* g, double x);
+// [내부 도우미] 차함수의 도함수 h'(x) = f'(x) - g'(x) 수치 계산
+double eval_diff_deriv(const ASTNode* f, const ASTNode* g, double x);
+
+NewtonTrace trace_newton_raphson(
+    const ASTNode* f,
+    const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
+    double x0,          // 사용자가 슬라이더로 지정하는 초기 추정값
+    int max_iter        // 최대 반복 횟수 (최대 63)
+);
+
+//파생함수 VIII: 테일러 급수로 초월함수 근사 (최대 14회) & 잔여 오차 추적
+TaylorResult generate_taylor_approx_arrays(
+    const ASTNode* f,
+    double a,           // 전개 기준점 x = a
+    int degree,         // 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,      // 가로축 x좌표 배열
+    double* out_poly,   // n차 테일러 다항식 P_n(x) 배열
+    double* out_error   // 잔여 오차 |R_n(x)| = |f(x) - P_n(x)| 배열
+);
+
+// [빵틀 조립기] 테일러 급수의 표현한도를 정하는 함수, 이를테면 1로 설정하면 0차 + 1차, 10으로 설정하면 상수부터 10차까지 깡그리 더해서 표현
+/*1. 다항식 (x-1)^k을 전개했을때 나오는 계수들을 모아서 가중치로 재활용
+    2. 그 가중치들을 기준점 주변의 함숫값에 각각 더해서 h^(-k)곱
+    3. k번 미분한 식 출력*/
+FDS build_central_diff_stencil(int order);
+
+// [빵틀 실행기] 진짜로 k번 미분한 값을 토해내는 함수
+double apply_diff_stencil(const ASTNode* f, double a, const FDS* st);
+// [호너 평가기] 임의 차수 테일러 다항식 P_n(x) 고속 계산
+
+/*※호너 평가기: 다항식을 상수 + 계수 * 뭐시깽이 형태로 고치는 마법
+다항식을 그냥 계산하면 2000개의 포인터를 갖고있는 데이터 하나 집어넣을때마다
+pow함수를 겁나게 넣어야 하는데, 얘를 쓰면 곱셈 몇번 덧셈 몇번으로 마법같이 해결*/
+double eval_taylor_poly(const TaylorResult* tr, double x);
+
+//파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
+// [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
+// 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
+// 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
+int generate_inverse_curve_arrays(
+    const ASTNode* f,
+    double x_min,
+    double x_max,
+    int count,
+    double* out_orig_x,   // 원함수 x좌표 배열
+    double* out_orig_y,   // 원함수 y = f(x) 배열
+    double* out_inv_x,    // 역함수 x좌표 배열 (= f(x))
+    double* out_inv_y,    // 역함수 y좌표 배열 (= x)
+    double* out_inv_dy    // 역함수 도함수 배열 (= 1 / f'(x), PIP 서브캔버스용)
+);
+
+// [슬라이더 연동 IX-2] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
+IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
+
+// 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적
+// [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
+OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
+
+// [PIP 파생함수 X-2] 구간 전체에 대한 곡률 함수 κ(x) 및 곡률반지름 R(x) 배열 생성
+void generate_curvature_array(
+    const ASTNode* f,
+    double x_min,
+    double x_max,
+    int count,
+    double* out_x,          // 가로축 x좌표 배열
+    double* out_curvature,  // 곡률 κ(x) 배열 (PIP 서브캔버스용)
+    double* out_radius      // 곡률반지름 R(x) 배열 (변곡점 부근은 NAN)
+);
+
+#ifdef __cplusplus
+}
+#endif

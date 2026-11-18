@@ -700,12 +700,12 @@ void print_help(void)
     printf("=======================================================================\n");
 }
 
-    int main_I(void) 
+    int main(void) 
     {
     char input[256];
 
     printf("CalcTech 3-Tier 수식 파서 & LaTeX 변환기 테스트\n");
-    printf("(종료하려면 'exit' 입력)\n");
+    printf("(종료하려면 'exit' 입력, 가이드가 필요하면 /? 입력)\n");
 
     while (1) 
     {
