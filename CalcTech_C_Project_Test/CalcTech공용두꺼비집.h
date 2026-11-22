@@ -22,7 +22,19 @@
 
 //테일러 급수 최대 미분 횟수 (for 파생함수 VIII)
 #define MAX_TAYLOR_DEGREE 14
+// 모듈 III 동적 축 스케일링 및 특징점 식별 코드
+#define SCALE_AUTO_UNION  0  // f ∪ g 통합 유효 치역 자동 맞춤 (기본값)
+#define SCALE_LOCK_1TO1   1  // x, y 눈금 간격 1:1 기하 비율 고정
+#define SCALE_FOLLOW_F    2  // 주함수 f(x) 치역 기준 고정
+#define SCALE_FOLLOW_G    3  // 보조함수 g(x) 치역 기준 고정
 
+#define X_UNIT_AUTO       0  // AST 분석 기반 X축 눈금 단위 자동 판별
+#define X_UNIT_DECIMAL    1  // 일반 10진 Nice-Step (1, 2, 5 × 10^n) 강제
+#define X_UNIT_PI         2  // π 라디안 Nice-Step (π/4, π/2, π...) 강제
+
+#define MAX_KEY_POINTS    128
+#define MIN_SAMPLE_COUNT  2000
+#define MAX_SAMPLE_COUNT  20000
 //공통 표준 라이브러리 모음
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +42,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <complex.h>
-
+#include <stdbool.h>
 //모듈 I: 사용자가 입력한 수식을 컴퓨터가 인식 가능한 형태로 변환하는 모듈
 
 // 빵틀 정의
@@ -242,12 +254,72 @@ typedef struct {
  } OsculatingCircleInfo;
  typedef OsculatingCircleInfo OscCircle;
 
-#ifdef __cplusplus
+ // [빵틀 20] Python UI -> C DLL 동적 축 스케일링 입력 옵션
+ typedef struct {
+     int scale_target;       // SCALE_AUTO_UNION(0) ~ SCALE_FOLLOW_G(3)
+     int x_unit_mode;        // X_UNIT_AUTO(0), X_UNIT_DECIMAL(1), X_UNIT_PI(2)
+     int include_origin_y;   // 1: y=0(x축)이 가까우면 화면에 강제 포함, 0: 데이터 범위만 맞춤
+     int target_ticks;       // 희망 눈금 칸 수 (기본값: 8 ~ 10)
+ } ScaleOption;
+
+ // [빵틀 21] 동적 축 스케일링 산출 결과 (격자 & 라벨 포맷팅 기준)
+ typedef struct {
+     double x_min, x_max;    // 동기화된 최종 X축 범위
+     double y_min, y_max;    // 점근선 제거 + 원점 포함 + 15% 여백이 반영된 최종 Y축 범위
+     double x_tick_step;     // X축 Nice-Step 눈금 간격
+     double y_tick_step;     // Y축 Nice-Step 눈금 간격
+     int resolved_pi_x;      // 1: X축 라벨을 π 분수 형태로 출력, 0: 일반 숫자 라벨
+     int is_1to1_locked;     // 1: 1:1 기하 비율 잠금 활성화 상태
+ } AxisScaleResult;
+ typedef AxisScaleResult AScale;
+
+ // [빵틀 22] 그래프 위 마커·빈 동그라미·점선 라벨 표시용 특징점 구조체
+ typedef enum {
+     KP_X_INTERCEPT = 0,  // X절편 (f(x) = 0)
+     KP_Y_INTERCEPT = 1,  // Y절편 (x = 0)
+     KP_LOCAL_MAX = 2,  // 극댓값 (f'(x) = 0, f''(x) < 0)
+     KP_LOCAL_MIN = 3,  // 극솟값 (f'(x) = 0, f''(x) > 0)
+     KP_INFLECTION = 4,  // 변곡점 (f''(x) = 0)
+     KP_INTERSECTION = 5,  // 두 함수의 교점 (f(x) = g(x))
+     KP_HOLE = 6   // 극한값만 있는 점 (구멍, Removable Discontinuity)
+ } KeyPointType;
+
+ typedef struct {
+     double x;               // 특징점 x좌표
+     double y;               // 특징점 y좌표 (KP_HOLE일 때는 극한값)
+     KeyPointType type;               // 그래프에 찍어야할 특이점 (절편, 극값, 변곡점, 극한값"만" 있는 부분, 두 함수의 교점)
+     int source_func;        // 0: 주함수 f, 1: 보조함수 g, 2: f와 g 공통(교점)
+     char label[64];      //기호복원 or 소수점 좌표 문자열 e.g. (e-1,0)
+ } GraphKeyPoint;
+ typedef GraphKeyPoint KeyPoint;
+
+ // [빵틀 23] C DLL -> Python(ctypes) 통합 렌더링 데이터 패키지
+ typedef struct {
+     int sample_count;       // 화면 해상도에 맞춰 동적으로 할당된 실제 샘플 수 N
+     double dx;              // 현재 샘플링 간격 (x_max - x_min) / (sample_count - 1)
+     AScale axis;         // 확정된 축 범위 및 Nice-Step 정보 ([빵틀 21])
+
+     // 주함수 f(x) 동적 할당 좌표 버퍼 (곡선을 그리기 위핸 기본 도화지 데이터)
+     double* x_arr;
+     double* y_arr;
+     double* dy_arr;
+     double* d2y_arr;
+     double* int_y_arr;
+
+     // 보조함수 g(x) 동적 할당 좌표 버퍼 (g가 NULL이면 미사용)
+     double* g_y_arr;
+
+     // 추출된 특징점(절편, 극점, 구멍, 교점) 배열
+     int keypoint_count;
+     KeyPoint keypoints[MAX_KEY_POINTS];
+ } ViewportPackage;
+
+ #ifdef __cplusplus
 extern "C" {
 #endif
 
 //외부 공개 함수
-
+//모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
 //키워드 탐색 함수
 const KeywordSpec* find_keyword(const char* text);
 // 토큰 리스트 메모리 초기화 (기본 용량: 16개)
@@ -618,6 +690,90 @@ void generate_curvature_array(
     double* out_x,          // 가로축 x좌표 배열
     double* out_curvature,  // 곡률 κ(x) 배열 (PIP 서브캔버스용)
     double* out_radius      // 곡률반지름 R(x) 배열 (변곡점 부근은 NAN)
+);
+
+//모듈III: 입력한 함수의 정보를 추출하기
+
+//1. 동적 축 스케일링
+static bool ast_contains_pi(const ASTNode* node);
+static bool ast_is_nonlinear_arg(const ASTNode* node);
+
+// AST 전체를 분석해 X축에 π 라디안 눈금을 쓸지(1) 일반 10진 눈금을 쓸지(0) 판별
+static int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
+int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
+
+// Nice-Step 눈금 간격 계산기 (10진 및 π 라디안)
+double calc_nice_step(double range, int target_ticks);
+double calc_pi_nice_step(double range, int target_ticks);
+
+// qsort용 double 오름차순 비교 함수 (백분위 이상치 컷용)
+static int compare_doubles(const void* a, const void* b);
+
+// [보조 함수] 단일 함수 배열에서 점근선을 마스킹하고 유효 [y_low, y_high] 추출
+static bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
+
+// 동적 축 스케일링 메인 통합 함수 (AScale 산출)
+AScale compute_dynamic_axis_scale(
+    const ASTNode* f_root, const ASTNode* g_root,
+    double x_min, double x_max,
+    double* y_f, double* y_g, int sample_count,
+    const ScaleOption* opt
+);
+
+//2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점)추출 & 소수점 근사치 복원
+
+// 두 수의 최대공약수를 출력하는 함수 (for 기약분수화)
+static int gcd_int(int a, int b);
+
+// 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
+static void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
+
+// 심화 특징점 정밀 추출기
+// 대상 함수 mode: 0 = f(x), 1 = f'(x), 2 = f''(x), 3 = f(x) - g(x)
+static double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode);
+
+// [a, b] 구간 내 이분법 (사잇값 정리 알고리즘 ver.) + 뉴턴-랩슨 하이브리드 정밀 근 탐색
+// true -> 구간 내 근 존재, false -> 존재X
+/* ※이분법만 쓰기엔 x축을 스치지만 하는 함수를 못잡아내고(사잇값 정리를 써도 두 함수값의 곱이 양수가 나옴)
+    뉴런-랩슨은 융통성이 없어서 같이 사용 */
+static bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root);
+
+// 특징점 중복 등록 방지 및 구조체 조립 도우미
+static void push_keypoint(
+    GraphKeyPoint* list, int* count, int max_count,
+    KeyPointType type, double x, double y
+);
+
+// 메인 특징점 추출 진입 함수
+int extract_graph_keypoints(
+    const ASTNode* f_root, const ASTNode* g_root,
+    double x_min, double x_max,
+    GraphKeyPoint* out_points, int max_points
+);
+
+// 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
+
+// [해결책 3] 고계 미분 및 테일러 급수 근사 시 부동소수점 오차 누적 억제
+double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
+
+// [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
+static double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
+
+// [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
+// 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
+int sample_curve_adaptive(
+    const ASTNode* f_root,
+    double x_min, double x_max,
+    int canvas_width_px,
+    double* out_x, double* out_y, int max_samples
+);
+// [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
+// 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
+int sample_curve_adaptive(
+    const ASTNode* f_root,
+    double x_min, double x_max,
+    int canvas_width_px,
+    double* out_x, double* out_y, int max_samples
 );
 
 #ifdef __cplusplus

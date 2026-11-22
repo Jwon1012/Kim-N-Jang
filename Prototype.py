@@ -19,7 +19,7 @@ plt.rcParams['axes.unicode_minus'] = False
 # 사용자 함수 입력
 # ==============================
 
-expr = input("함수를 입력하세요 (예: sin(x), x**2, exp(x), x**3-3*x+1) : ")
+expr = input("함수를 입력하세요 (예: sein(x), x**2, exp(x), x**3-3*x+1) : ")
 
 # 함수 정의
 def f(x):

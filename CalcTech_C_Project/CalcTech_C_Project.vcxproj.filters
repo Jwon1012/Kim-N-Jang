@@ -41,15 +41,6 @@
     <ClCompile Include="보고서I_예시코드I.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="모듈1-1_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="모듈1-2_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="모듈 1-3_test..c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="C모듈.c">
       <Filter>소스 파일</Filter>
     </ClCompile>

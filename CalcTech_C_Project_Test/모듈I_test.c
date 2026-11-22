@@ -1,4 +1,6 @@
 ﻿#include "CalcTech공용두꺼비집.h"
+
+//모듈I: 사용자가 입력한 수식을 AST로 변환하기
 const KeywordSpec KEYWORD_TABLE[] = {
     // [0] 상수 키워드 (expected_args = 0, 자식 노드 없음)
     { "inf",       NODE_NUMBER,     0 }, // 무한대 (\infty)
@@ -27,6 +29,7 @@ const KeywordSpec KEYWORD_TABLE[] = {
     { "cosh",      NODE_FUNCTION,   1 },
     { "tanh",      NODE_FUNCTION,   1 },
     { "sqrt",      NODE_FUNCTION,   1 }, //제곱근 (0.5제곱으로 작성해도 무관)
+    {"gamma", NODE_FUNCTION,    1}, //팩토리얼 함수
 
     // [2] 다중 인자 함수 및 대형 수학 연산자 (expected_args >= 2)
     { "frac",      NODE_SPECIAL_OP, 2 }, // args[0]: 분자, args[1]: 분모
@@ -123,7 +126,7 @@ TokenList tokenize(const char* expr) {
         }
 
         // [규칙 D] 사칙연산자 및 거듭제곱 기호 처리
-        if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '^')
+        if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '^' || *p == '=')
         {
             char buf[2] = { *p++, '\0' };
             add_token(&list, TOKEN_OPERATOR, buf);
@@ -407,6 +410,16 @@ ASTNode* parse_expression(Parser* p)
         left = op_node;
         t = peek(p);
     }
+
+    if (t != NULL && t->type == TOKEN_OPERATOR && strcmp(t->text, "=") == 0)
+    {
+        Token* op_token = advance(p);
+        ASTNode* right = parse_expression(p); // 우변 전체를 재귀로 파싱
+        ASTNode* op_node = create_ast_node(NODE_BINARY_OP, op_token->text);
+        op_node->left = left;
+        op_node->right = right;
+        return op_node;
+    }
     return left;
 }
 
@@ -595,6 +608,12 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len)
             append_str(out_buf, max_len, "\\right)'");
             return;
         }
+        if (strcmp(node->value, "gamma") == 0) {
+            append_str(out_buf, max_len, "\\left(");
+            ast_to_latex(node->left, out_buf, max_len);
+            append_str(out_buf, max_len, "-1\\right)!");
+            return;
+        }
         // 기존 일반 삼각·로그 함수 처리...
         append_str(out_buf, max_len, "\\");
         append_str(out_buf, max_len, node->value);
@@ -687,7 +706,8 @@ void print_help(void)
     printf(" 2. 단일 인자 함수 (인자 1개)\n");
     printf("    - sqrt(x)  : 제곱근              | abs(x)   : 절댓값 (|x|)\n");
     printf("    - prime(f) : 프라임 미분 (f')    | ln(x)    : 자연로그\n");
-    printf("    - log(x)   : 상용로그            | sin, cos, tan, exp 등\n\n");
+    printf("    - log(x)   : 상용로그            | sin, cos, tan, exp 등\n");
+    printf("    - gamma(x): 감마함수 ※  0이상의 모든 실수에 대응하는 팩토리얼\n\n");
 
     printf(" 3. 대형 수학 연산자 및 다중 인자 함수 (인자 순서 주의!)\n");
     printf("    - frac(분자, 분모)               : 분수\n");
@@ -697,10 +717,11 @@ void print_help(void)
     printf("    - lim(변수, 목표값, 식)          : 극한 (예: lim(x, inf, 1/x))\n");
     printf("    - sum(변수, 시작값, 끝값, 식)    : 시그마 합 (예: sum(k, 1, n, k^2))\n");
     printf("    - int(아래끝, 위끝, 식, 변수)    : 정적분 (예: int(0, pi, sin(x), x))\n");
+    printf("    - abs(식)                      : 절댓값 함수 (예: abs(-4) => 4, abs(x) => |x|\n");
     printf("=======================================================================\n");
 }
 
-    int main(void) 
+int main(void) 
     {
     char input[256];
 

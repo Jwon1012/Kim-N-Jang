@@ -26,7 +26,7 @@ double eval_ast(const ASTNode* node, double x)
         return x; // 독립변수 x 대입
     }
 
-    // (3) 이항 연산자 (+, -, *, /, ^) 및 단항 음수 (-x)
+    // (3) 이항 연산자 (+, -, *, /, ^,=) 및 단항 음수 (-x)
     if (node->type == NODE_BINARY_OP)
     {
         // 단항 마이너스 처리 (모듈 I에서 left == NULL 로 저장됨)
@@ -36,7 +36,7 @@ double eval_ast(const ASTNode* node, double x)
         double R = eval_ast(node->right, x);
 
         if (strcmp(node->value, "+") == 0) return L + R;
-        if (strcmp(node->value, "-") == 0) return L - R;
+        if (strcmp(node->value, "-") == 0 || strcmp(node->value, "=") == 0) return L - R;
         if (strcmp(node->value, "*") == 0) return L * R;
         if (strcmp(node->value, "/") == 0) return (fabs(R) < 1e-15) ? NAN : (L / R); //0으로 나누는 경우 제외
         if (strcmp(node->value, "^") == 0) return pow(L, R);
@@ -73,6 +73,9 @@ double eval_ast(const ASTNode* node, double x)
         if (strcmp(fn, "sinh") == 0) return sinh(v);
         if (strcmp(fn, "cosh") == 0) return cosh(v);
         if (strcmp(fn, "tanh") == 0) return tanh(v);
+
+        //etc.
+        if (strcmp(fn, "gamma") == 0) return tgamma(v);
         return NAN;
     }
 
@@ -146,7 +149,7 @@ double num_integrate(const ASTNode* root, double a, double b, int steps)
     if (isnan(sum)) return NAN;
 
     for (int i = 1; i < steps; i++)
-    {
+    {           
         double xi = a + i * dx;
         double yi = eval_ast(root, xi);
         if (isnan(yi)) return NAN;
@@ -536,7 +539,6 @@ void generate_def_integral_array(
  }
 
 //파생함수IC: 특이함수 정적분(위·아래끝 함수, 특이점 보정) 및 이상적분 (정적분의 극한)
-
 
 // ※ 이상적분: a~x까지의 정적분을 하고 a값을 극한으로 보내는 적분 (제1종)
 // 제2종: 점근선 같은 구간을 피한 이상적분
@@ -980,7 +982,6 @@ MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b)
 
 //파생함수 VB: 코시 평균값 정리 — 매개변수 곡선 (g(t), f(t)) 평행 속도 벡터 탐색
 
-
 /*코시 MVT: 
 아무리 어떤 물체가 wlfkf을 해도 현재 위치와 시작점을 이은 방향과 같아지는 순간은 반드시 존재한다는 정리.
 이 식에서 어느 하나의 변수를 다른 변수로 극한을 보내면 로피탈정리 뚝딱*/
@@ -1131,7 +1132,6 @@ GDTraceResult trace_gradient_descent(
 //파생함수 VI: 곡선의 길이
 
 //파생함수 VIA: 호의 길이 추적 (결국 곡선의 길이공식을 대입한 함수)
-
 /*※실제 수능에서는 27,8번 계산문제로 가끔 나올정도로 마이너한 주제지만
  실제 경로와 이동 경로를 비교하거나 이거를 함수로 나타내면 항상 1보다 큰 순증가함수여서
  여러모로 유능하게 사용됨*/
@@ -1235,6 +1235,7 @@ void generate_arc_length_arrays(
 }
 
 // 파생함수 VIB: 곡선의 길이를 N등분하는 좌표 추출 및 굴곡도(Tortuosity) 분석
+
 // 굴곡도(타우): 두 점 사이를 곡선으로 지나가면, 직선으로 돌아가는거에 비해 몇배나 더 걸리는지 비교하는 상수
 // 굴곡도 = 곡선의 길이 / 두점 사이의 직선 길이
 ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions) {
@@ -1441,8 +1442,7 @@ NewtonTrace trace_newton_raphson(
 
         // [수렴 판정] |h(x_n)| < 1e-9 이면 교점(근) 도달 완료!
         if (fabs(hx) < ZERO_EPSILON) {
-            res.status = 0;
-            break;
+            res.status = 0; break;
         }
 
         // [특이점 발산 판정] 접선의 기울기 h'(x_n)이 0에 너무 가까우면 x절편이 무한대로 발산!
