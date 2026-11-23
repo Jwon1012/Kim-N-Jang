@@ -166,10 +166,10 @@
     <None Include="cpp.hint" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\CalcTech_C_Project_Test\CalcTech공용두꺼비집.h" />
     <ClInclude Include="CalcTech_C_Project.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="모듈I.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CalcTech_C_Project.c" />

@@ -144,6 +144,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\CalcTech_C_Project\보고서I_예시코드I.c" />
+    <ClCompile Include="main.c" />
     <ClCompile Include="모듈III_test.c" />
     <ClCompile Include="모듈II_test.c" />
     <ClCompile Include="모듈I_test.c" />

@@ -27,6 +27,9 @@
     <ClCompile Include="모듈III_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="main.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CalcTech공용두꺼비집.h">
