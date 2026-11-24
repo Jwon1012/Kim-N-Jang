@@ -167,15 +167,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\CalcTech_C_Project_Test\CalcTech공용두꺼비집.h" />
-    <ClInclude Include="CalcTech_C_Project.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈III_test.c" />
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈II_test.c" />
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈I_test.c" />
     <ClCompile Include="CalcTech_C_Project.c" />
-    <ClCompile Include="C모듈.c" />
     <ClCompile Include="dllmain.c" />
-    <ClCompile Include="보고서I_예시코드I.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

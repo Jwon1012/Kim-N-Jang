@@ -1,5 +1,6 @@
 ﻿#pragma once
 #define _USE_MATH_DEFINES
+#define CALCTECH_API __declspec(dllexport)
 #define DEFAULT_SAMPLE_COUNT 2000
 //수치 미분 전용 스텝 크기 (절단 오차와 반올림 오차의 최적 균형점)
 #define DIFF_STEP_H1  1e-5   // 1계 도함수용 (eps^(1/3))
@@ -312,11 +313,31 @@ typedef struct {
      // 추출된 특징점(절편, 극점, 구멍, 교점) 배열
      int keypoint_count;
      KeyPoint keypoints[MAX_KEY_POINTS];
+
+     // 함수 주기 정보 (비주기 함수면 period = NAN, period_label = "None")
+     double period;
+     char period_label[32];
  } ViewportPackage;
 
- #ifdef __cplusplus
-extern "C" {
-#endif
+ //[빵틀 24] 점근선의 방정식의 종류를 담은 빵틀
+ typedef enum {
+     ASYMP_VERTICAL = 0,       // 수직 점근선: x = a
+     ASYMP_HORIZONTAL = 1,     // 수평 점근선: y = b
+     ASYMP_OBLIQUE = 2,        // 사선 점근선: y = mx + n
+     ASYMP_CURVILINEAR = 3     // 곡선 점근선: y = g(x)
+ } AsymptoteType;
+ typedef AsymptoteType ASType;
+
+ //[빵틀 25] 수직·수평·사선·곡선 점근선 통합 정보 및 잔차 검증 결과를 담은 빵틀 (파이썬 전달용)
+ typedef struct {
+     AsymptoteType type;       // 점근선 유형
+     double value;             // 수직(x = value) 또는 수평(y = value) 기준 상수 (사선/곡선은 NAN)
+     int direction;            // 0: 양방향(좌·우 또는 ±∞), +1: 우측/+∞만, -1: 좌측/-∞만
+     bool is_confirmed;        // 극한 발산/잔차 수렴 기준 통과 여부 (true: 확정, false: 계산 리포트 전용)
+     double final_residual;    // 비수직 점근선 검증 시 최종 잔차 |f(x) - g(x)| (수직은 NAN)
+     char equation[96];        // 파이썬 전달용 방정식 문자열 (예: "x = 0", "y = pi/2", "y = 2x - 1")
+ } GraphAsymptote;
+ typedef GraphAsymptote GAsymp;
 
 //외부 공개 함수
 //모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
@@ -694,12 +715,16 @@ void generate_curvature_array(
 
 //모듈III: 입력한 함수의 정보를 추출하기
 
-//1. 동적 축 스케일링
-static bool ast_contains_pi(const ASTNode* node);
-static bool ast_is_nonlinear_arg(const ASTNode* node);
+//1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
+
+// 서브트리에 상수 'pi'가 포함되어 있는지 확인 (예: sin(2*pi*x) 판별용)
+bool ast_contains_pi(const ASTNode* node);
+
+// 서브트리에 변수 'x' 외에 비선형 연산(exp, ln, 2차 이상 거듭제곱 등)이 있는지 확인
+bool ast_is_nonlinear_arg(const ASTNode* node);
 
 // AST 전체를 분석해 X축에 π 라디안 눈금을 쓸지(1) 일반 10진 눈금을 쓸지(0) 판별
-static int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
+int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
 int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
 
 // Nice-Step 눈금 간격 계산기 (10진 및 π 라디안)
@@ -707,10 +732,10 @@ double calc_nice_step(double range, int target_ticks);
 double calc_pi_nice_step(double range, int target_ticks);
 
 // qsort용 double 오름차순 비교 함수 (백분위 이상치 컷용)
-static int compare_doubles(const void* a, const void* b);
+int compare_doubles(const void* a, const void* b);
 
 // [보조 함수] 단일 함수 배열에서 점근선을 마스킹하고 유효 [y_low, y_high] 추출
-static bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
+bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
 
 // 동적 축 스케일링 메인 통합 함수 (AScale 산출)
 AScale compute_dynamic_axis_scale(
@@ -720,29 +745,41 @@ AScale compute_dynamic_axis_scale(
     const ScaleOption* opt
 );
 
-//2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점)추출 & 소수점 근사치 복원
+//2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
 
 // 두 수의 최대공약수를 출력하는 함수 (for 기약분수화)
-static int gcd_int(int a, int b);
+int gcd_int(int a, int b);
 
 // 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
-static void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
+void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
 
-// 심화 특징점 정밀 추출기
+// 심화 특징점(절편, 극점, 변곡점, 교점, 극한값만 있는 점) 정밀 추출기
 // 대상 함수 mode: 0 = f(x), 1 = f'(x), 2 = f''(x), 3 = f(x) - g(x)
-static double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode);
+double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode);
 
 // [a, b] 구간 내 이분법 (사잇값 정리 알고리즘 ver.) + 뉴턴-랩슨 하이브리드 정밀 근 탐색
-// true -> 구간 내 근 존재, false -> 존재X
-/* ※이분법만 쓰기엔 x축을 스치지만 하는 함수를 못잡아내고(사잇값 정리를 써도 두 함수값의 곱이 양수가 나옴)
-    뉴런-랩슨은 융통성이 없어서 같이 사용 */
-static bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root);
+bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root);
 
 // 특징점 중복 등록 방지 및 구조체 조립 도우미
-static void push_keypoint(
+void push_keypoint(
     GraphKeyPoint* list, int* count, int max_count,
     KeyPointType type, double x, double y
 );
+
+//사용자가 제공한 범위 내에 함수의 특징점이 있는지 확인하는 함수
+void check_direct_candidate(
+    const ASTNode* f_root, const ASTNode* g_root,
+    double x_cand, double x_min, double x_max,
+    GraphKeyPoint* out_points, int* count, int max_points
+);
+
+// 함수 최소 주기 탐색 (비주기면 NAN, out_label에 "None" 저장)
+double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
+// 주기 존재여부 확인 함수
+bool is_valid_period(const ASTNode* f, double p);
+
+// [내부 도우미] 찾은 주기 P를 정수 k(12 -> 2)로 나누어 최소 주기(기본 주기)로 축소
+double reduce_to_minimal_period(const ASTNode * f, double p);
 
 // 메인 특징점 추출 진입 함수
 int extract_graph_keypoints(
@@ -757,7 +794,7 @@ int extract_graph_keypoints(
 double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
 
 // [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
-static double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
+double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
 
 // [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
 // 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
@@ -767,15 +804,76 @@ int sample_curve_adaptive(
     int canvas_width_px,
     double* out_x, double* out_y, int max_samples
 );
-// [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
-// 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
-int sample_curve_adaptive(
+
+// 4. 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
+
+// 내부 도우미: 중복 점근선 병합 및 방정식 문자열 조립
+void push_asymptote_record(
+    GAsymp* list, int* count, int max_count,
+    ASType type, double val, int direction,
+    bool is_confirmed, double residual, const char* custom_eq
+);
+
+// [파트 A] 수직 점근선(x = a) 독립 추출기
+bool check_vertical_one_sided_divergence(const ASTNode* f, double c, int dir);
+// 유효 영역(valid_x)과 NaN/발산 영역(invalid_x) 사이 경계 정밀 이분 탐색
+double refine_vertical_asymptote_x(const ASTNode* f, double valid_x, double invalid_x);
+
+// 독립 API 1: 정의역 내 수직 점근선 추출
+int extract_vertical_asymptotes(
     const ASTNode* f_root,
     double x_min, double x_max,
     int canvas_width_px,
-    double* out_x, double* out_y, int max_samples
+    GAsymp* out_list, int max_count
 );
 
-#ifdef __cplusplus
-}
-#endif
+// [파트 B] 비수직 점근선(수평·사선·곡선) 잔차 r(x) = |f(x) - g(x)| 검증기
+bool evaluate_residual_convergence_dir(
+    const ASTNode* f_root,
+    const ASTNode* cand_g_root,
+    int dir,
+    double* out_final_residual,
+    bool* out_is_converged
+);
+
+// 독립 API 2: 파이썬/모듈4가 넘긴 후보 식(cand_g_root)을 잔차 r(x)로 검증
+bool verify_candidate_asymptote_expr(
+    const ASTNode* f_root,
+    const ASTNode* cand_g_root,
+    ASType cand_type,
+    const char* cand_eq_str,
+    GAsymp* out_record
+);
+
+// C 자체 보조 탐색: 원거리 코시 수렴 판정으로 자체 수평 점근선 후보 포착
+bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff);
+
+// [파트 C] 파이썬 전달용 통합 진입 함수 (독립 실행 메인 API)
+int extract_asymptote_equations(
+    const ASTNode* f_root,
+    double x_min, double x_max,
+    int canvas_width_px,
+    const ASTNode* const* cand_g_roots, // 파이썬/모듈4 제안 후보 AST 배열 (없으면 NULL)
+    const ASType* cand_types,    // 각 후보의 점근선 타입 배열 (없으면 NULL)
+    const char* const* cand_eq_strs,    // 각 후보의 문자열 배열 (없으면 NULL)
+    int num_candidates,                 // 후보 개수 (0 가능)
+    GAsymp* out_asymptotes,
+    int max_asymptotes
+);
+
+//========파이썬 딸깍용 코드 모음=========
+CALCTECH_API ASTNode* calctech_parse_formula(const char* expr);
+CALCTECH_API void calctech_free_formula(ASTNode* root);
+CALCTECH_API void calctech_formula_to_latex(const char* expr, char* out_buf, int max_len);
+
+CALCTECH_API ViewportPackage* calctech_build_viewport(
+    const ASTNode* f_root,
+    const ASTNode* g_root,
+    double x_min,
+    double x_max,
+    int canvas_width_px,
+    int scale_target,
+    int x_unit_mode,
+    int include_origin_y
+);
+CALCTECH_API void calctech_free_viewport(ViewportPackage* pkg);

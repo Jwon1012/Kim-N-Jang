@@ -21,9 +21,6 @@
     <ClInclude Include="framework.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="CalcTech_C_Project.h">
-      <Filter>헤더 파일</Filter>
-    </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
@@ -38,10 +35,13 @@
     <ClCompile Include="dllmain.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="보고서I_예시코드I.c">
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈I_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="C모듈.c">
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈II_test.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\CalcTech_C_Project_Test\모듈III_test.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
