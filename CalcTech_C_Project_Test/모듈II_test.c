@@ -2,6 +2,19 @@
 
 //모듈II: 모듈I에서 출력한 LaTeX 수식이 그리는 그래프를 수학적으로 접근할 수 있는 함수 만들기
 
+ // k계 도함수 중앙 차분 가중치 테이블 전용 빵틀
+typedef struct {
+    int order;               // 미분 차수 k (0 ~ 14)
+    int radius;              // 좌우 샘플링 반경 R (총 2R + 1개 점 사용)
+    double step_h;           // 해당 차수에 최적화된 스텝 크기 h
+    double weights[32];      // 중앙 차분 가중치 w_j (j = -R ~ +R 를 0 ~ 2R 인덱스에 매핑)
+} FiniteDiffStencil;
+typedef FiniteDiffStencil FDS;
+
+static FDS build_central_diff_stencil(int order);
+static double apply_diff_stencil(const ASTNode* f, double a, const FDS* st);
+static double eval_taylor_poly(const TaylorResult* tr, double x);
+
 //IIA: C언어로 미분,적분 구현하기
 // AST 수식 평가기: 트리를 후위 순회하며 x 대입 결과(double) 반환
 // 첫번째 인자는 자판기의 내용물, 두번째 인자는 자판기에 넣을 동전
@@ -15,7 +28,7 @@ double eval_ast(const ASTNode* node, double x)
     // (1) 숫자 및 상수 (pi, inf)
     if (node->type == NODE_NUMBER)
     {
-        if (strcmp(node->value, "pi") == 0) return M_PI;
+        if (strcmp(node->value, "pi" ) == 0) return M_PI;
         if (strcmp(node->value, "inf") == 0 || strcmp(node->value, "infty") == 0) return INFINITY;
         return atof(node->value);
     }
@@ -101,6 +114,7 @@ double eval_ast(const ASTNode* node, double x)
             int order = (int)eval_ast(node->args[2], x);
             if (order == 1) return num_diff_1st(node->args[0], x); //1계미분
             if (order == 2) return num_diff_2nd(node->args[0], x); //2계미분
+            if (order >= 3) return eval_nth_derivative_safe(node->args[0], x, order); //다계 미분
         }
         if (strcmp(op, "int") == 0 && node->arg_count == 4)
         {
@@ -113,7 +127,7 @@ double eval_ast(const ASTNode* node, double x)
     return NAN;
 }
 
-// 2. 수치 미분 (중앙 차분법: 오차 O(h^2))
+// 2. 수치 미분 (중앙 차분법: 오차 O(h^2)) for 극,변곡점 탐색
 double num_diff_1st(const ASTNode* root, double x)
 {
     double h = DIFF_STEP_H1;
@@ -122,7 +136,6 @@ double num_diff_1st(const ASTNode* root, double x)
     if (isnan(f_plus) || isnan(f_minus)) return NAN;
     return (f_plus - f_minus) / (2.0 * h);
 }
-
 double num_diff_2nd(const ASTNode* root, double x)
 {
     double h = 1e-4; // 2계 미분은 h^2으로 나누므로 부동소수점 손실 방지를 위해 1e-4 사용
@@ -133,7 +146,57 @@ double num_diff_2nd(const ASTNode* root, double x)
     return (f_plus - 2.0 * f_curr + f_minus) / (h * h);
 }
 
+//다계미분, 대상의 크기에 따라 돋보기의 배율을 자동으로 조정해주는 코드
+double eval_nth_derivative_safe(const ASTNode* f, double x, int order) {
+    if (!f || order < 0) return NAN;
+    if (order == 0) return eval_ast(f, x);
+
+    // 돋보기 배율 결정
+    const long double LDBL_EPS = 1e-16L;
+    double h = (double)powl(LDBL_EPS, 1.0L / (long double)(order + 2));
+    if (h < 1e-7) h = 1e-7;
+    if (h > 1e-2) h = 1e-2;
+
+    // 1계 ~ 4계 중심 차분 고밀도 스텐실, 함수를 따로 정의하는게 아닌 한번에 계산 (테일러 급수 PIP용 오차 최소화)
+    if (order == 1) {
+        long double fm2 = eval_ast(f, x - 2.0 * h);
+        long double fm1 = eval_ast(f, x - h);
+        long double fp1 = eval_ast(f, x + h);
+        long double fp2 = eval_ast(f, x + 2.0 * h);
+        return (double)((fm2 - 8.0L * fm1 + 8.0L * fp1 - fp2) / (12.0L * h));
+    }
+    if (order == 2) {
+        long double fm2 = eval_ast(f, x - 2.0 * h);
+        long double fm1 = eval_ast(f, x - h);
+        long double f0 = eval_ast(f, x);
+        long double fp1 = eval_ast(f, x + h);
+        long double fp2 = eval_ast(f, x + 2.0 * h);
+        return (double)((-fm2 + 16.0L * fm1 - 30.0L * f0 + 16.0L * fp1 - fp2) / (12.0L * h * h));
+    }
+    if (order == 3) {
+        long double fm2 = eval_ast(f, x - 2.0 * h);
+        long double fm1 = eval_ast(f, x - h);
+        long double fp1 = eval_ast(f, x + h);
+        long double fp2 = eval_ast(f, x + 2.0 * h);
+        return (double)((-fm2 + 2.0L * fm1 - 2.0L * fp1 + fp2) / (2.0L * h * h * h));
+    }
+    if (order == 4) {
+        long double fm2 = eval_ast(f, x - 2.0 * h);
+        long double fm1 = eval_ast(f, x - h);
+        long double f0 = eval_ast(f, x);
+        long double fp1 = eval_ast(f, x + h);
+        long double fp2 = eval_ast(f, x + 2.0 * h);
+        return (double)((fm2 - 4.0L * fm1 + 6.0L * f0 - 4.0L * fp1 + fp2) / (h * h * h * h));
+    }
+
+    // 5계 이상 재귀 호출 시에도 차수별 최적 스텝 유지
+    double h_high = 1e-2;
+    return (eval_nth_derivative_safe(f, x + h_high, order - 1)
+        - eval_nth_derivative_safe(f, x - h_high, order - 1)) / (2.0 * h_high);
+}
+
 // 3. 단일 구간 수치 적분 (합성 심프슨 1/3 법칙: 오차 O(dx^4))
+
 // 구간을 n개로 쪼갠 다음 구간의 점에 인덱스 번호에 따라 [1,4,2,4,2,4,..,1]이라는 가중치를 곱해서 넓이를 계산
 double num_integrate(const ASTNode* root, double a, double b, int steps)
 {
@@ -252,7 +315,7 @@ double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, dou
 //FUNC + X_AXIS => 곡선 & 축, 세가지 전부 => 곡선 & 접선 & 축
 
 // 범용 심프슨 1/3 적분기: 어떤 경계 조합이든 |top(x) - bot(x)| 적분
-double integrate_between_bounds(
+static double integrate_between_bounds(
     const ASTNode* f,
     TangentInfo tan_info,
     double a,
@@ -285,7 +348,7 @@ double integrate_between_bounds(
 }
 
 // [내부 도우미] 중복 없이 핵심 x좌표 추가 & 이분법 근 탐색
-void add_unique_point(double* arr, int* count, double val, double x_min, double x_max) {
+static void add_unique_point(double* arr, int* count, double val, double x_min, double x_max) {
     if (isnan(val) || val < x_min - 1e-7 || val > x_max + 1e-7) return;
     if (val < x_min) val = x_min;
     if (val > x_max) val = x_max;
@@ -299,7 +362,7 @@ void add_unique_point(double* arr, int* count, double val, double x_min, double 
 }
 
 // mode == 0: 곡선과 접선의 교점 탐색, mode == 1: 곡선과 x축의 교점 탐색 탐색
-void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
+static void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
     double x_min, double x_max, double* pts, int* count) {
     int scan_steps = 1000;
     double dx = (x_max - x_min) / (double)scan_steps;
@@ -444,7 +507,7 @@ void generate_tangent_area_S(
 
 // 내부 도우미: 단일 구간 [x1, x2]에 대한 심프슨 1/3 정적분 (is_abs == 1이면 |f(t)| 적분)
 // 기존에 있는 함수에는 절댓값 옵션이 존재하지 않았음
-double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs) 
+static double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs) 
 {
     if (fabs(x2 - x1) < 1e-15) return 0.0; //위아래끝이 같은 경우
     if (steps < 2) steps = 2;
@@ -474,7 +537,6 @@ void generate_def_integral_array(
         double x_min,
         double x_max,
         int mode, //패턴 1(시작점 고정 a~x), 패턴 2(구간 이동 x~x+h), 패턴 3(대칭 구간 a-x~a+x), 
-        //위/아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
         double param, //패턴 1, 3에서는 기준점 'a', 패턴 2에서는 구간 폭 'h'
         int is_abs, //0이면 순수 정적분(부호 유지), 1이면 기하학적 넓이(| f(t) | )
         int count,
@@ -714,7 +776,7 @@ void generate_composite_n_axis_arrays(
 // 합성방정식 실근 역추적 & 합성부등식 해집합 스캐닝
 
 // [내부 도우미] 일반 함수방정식 h(u) = target 의 실근을 함수의 정의역 에서 모두 탐색
-  int scan_equation_roots(
+static int scan_equation_roots(
     const ASTNode* func,
     double target, //f(g(x)) = k에서 g(x)를 t로 치환하여 g(x) = t라는 방정식에서는 t가 target, f(t) = k에선 k가 target
     double u_min,
@@ -983,7 +1045,7 @@ MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b)
 //파생함수 VB: 코시 평균값 정리 — 매개변수 곡선 (g(t), f(t)) 평행 속도 벡터 탐색
 
 /*코시 MVT: 
-아무리 어떤 물체가 wlfkf을 해도 현재 위치와 시작점을 이은 방향과 같아지는 순간은 반드시 존재한다는 정리.
+어떤 물체가 아무리 wlfkf을 해도 현재 위치와 시작점을 이은 방향과 같아지는 순간은 반드시 존재한다는 정리.
 이 식에서 어느 하나의 변수를 다른 변수로 극한을 보내면 로피탈정리 뚝딱*/
 Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b) {
     Cauchy res;
@@ -1137,14 +1199,14 @@ GDTraceResult trace_gradient_descent(
  여러모로 유능하게 사용됨*/
 
 // [내부 도우미] 미소 길이 요소 ds/dx = sqrt(1 + (f'(x))^2) 계산
-double eval_arc_speed(const ASTNode* f, double x) {
+static double eval_arc_speed(const ASTNode* f, double x) {
     double df = num_diff_1st(f, x);
     if (isnan(df)) return NAN;
     return sqrt(1.0 + df * df);
 }
 
 // 단일 구간 [a, b]의 정확한 곡선 전체 길이 L 계산 (심프슨 1/3 법칙)
-double calc_arc_length(const ASTNode* f, double a, double b, int steps) {
+static double calc_arc_length(const ASTNode* f, double a, double b, int steps) {
     if (f == NULL || isnan(a) || isnan(b)) return NAN;
     if (fabs(b - a) < 1e-15) return 0.0;
 
@@ -1302,7 +1364,7 @@ ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divi
 // 파생함수 VIC: 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적
 
 // [내부 도우미] 매개변수 곡선 순간 속력 v(t) = sqrt((g'(t))^2 + (f'(t))^2)
-double eval_param_speed(const ASTNode* f, const ASTNode* g, double t) {
+static double eval_param_speed(const ASTNode* f, const ASTNode* g, double t) {
     double dg = num_diff_1st(g, t);
     double df = num_diff_1st(f, t);
     if (isnan(dg) || isnan(df)) return NAN;
@@ -1310,7 +1372,7 @@ double eval_param_speed(const ASTNode* f, const ASTNode* g, double t) {
 }
 
 // 단일 매개변수 구간 [t1, t2]의 곡선 궤적 길이 계산 (심프슨 1/3 법칙)
-double calc_param_arc_length(const ASTNode* f, const ASTNode* g, double t1, double t2, int steps) {
+static double calc_param_arc_length(const ASTNode* f, const ASTNode* g, double t1, double t2, int steps) {
     if (f == NULL || g == NULL || isnan(t1) || isnan(t2)) return NAN;
     if (fabs(t2 - t1) < 1e-15) return 0.0;
 
@@ -1379,7 +1441,7 @@ void generate_param_arc_arrays(
 
 // 파생함수 VII: 뉴턴-랩슨법(Newton-Raphson) 교점 탐색 및 접선 궤적 추적
 // [내부 도우미] 차이 함수 h(x) = f(x) - g(x) 계산 (g가 NULL이면 단일 함수 f(x) = 0 모드)
-double eval_diff_func(const ASTNode* f, const ASTNode* g, double x) {
+static double eval_diff_func(const ASTNode* f, const ASTNode* g, double x) {
     double fx = eval_ast(f, x);
     if (isnan(fx)) return NAN;
     if (g == NULL) return fx;
@@ -1389,7 +1451,7 @@ double eval_diff_func(const ASTNode* f, const ASTNode* g, double x) {
 }
 
 // [내부 도우미] 차이 함수의 도함수 h'(x) = f'(x) - g'(x) 수치 계산
-double eval_diff_deriv(const ASTNode* f, const ASTNode* g, double x) {
+static double eval_diff_deriv(const ASTNode* f, const ASTNode* g, double x) {
     double df = num_diff_1st(f, x);
     if (isnan(df)) return NAN;
     if (g == NULL) return df; 
@@ -1468,6 +1530,21 @@ NewtonTrace trace_newton_raphson(
 }
 
 
+
+// [호너 평가기] 임의 차수 테일러 다항식 P_n(x) 고속 계산
+
+/*※호너 평가기: 다항식을 상수 + 계수 * 뭐시깽이 형태로 고치는 마법
+다항식을 그냥 계산하면 2000개의 포인터를 갖고있는 데이터 하나 집어넣을때마다 
+pow함수를 겁나게 넣어야 하는데, 얘를 쓰면 곱셈 몇번 덧셈 몇번으로 마법같이 해결*/
+static double eval_taylor_poly(const TaylorResult* tr, double x) {
+    double dx = x - tr->center_a;
+    double sum = tr->coeffs[tr->degree];
+    for (int k = tr->degree - 1; k >= 0; k--) {
+        sum = sum * dx + tr->coeffs[k];
+    }
+    return sum;
+}
+
 // 파생함수 VIII:테일러급수로 초월함수 근사 (최대 14차) & 잔여 오차 추적
 TaylorResult generate_taylor_approx_arrays(
     const ASTNode* f,
@@ -1527,7 +1604,7 @@ TaylorResult generate_taylor_approx_arrays(
 /*1. 다항식 (x-1)^k을 전개했을때 나오는 계수들을 모아서 가중치로 재활용
     2. 그 가중치들을 기준점 주변의 함숫값에 각각 더해서 1/(h^k)곱 
     3. k번 미분한 식 출력*/
-FDS build_central_diff_stencil(int order) {
+static FDS build_central_diff_stencil(int order) {
     FDS st;
     memset(&st, 0, sizeof(FDS));
 
@@ -1594,7 +1671,7 @@ FDS build_central_diff_stencil(int order) {
 }
 
 // [빵틀 실행기] 진짜로 k번 미분한 값을 토해내는 함수
-double apply_diff_stencil(const ASTNode* f, double a, const FDS* st) {
+static double apply_diff_stencil(const ASTNode* f, double a, const FDS* st) {
     if (f == NULL || st == NULL || isnan(a)) return NAN;
     if (st->order == 0) return eval_ast(f, a);
 
@@ -1611,20 +1688,6 @@ double apply_diff_stencil(const ASTNode* f, double a, const FDS* st) {
     }
 
     return sum / pow(st->step_h, (double)st->order);
-}
-
-// [호너 평가기] 임의 차수 테일러 다항식 P_n(x) 고속 계산
-
-/*※호너 평가기: 다항식을 상수 + 계수 * 뭐시깽이 형태로 고치는 마법
-다항식을 그냥 계산하면 2000개의 포인터를 갖고있는 데이터 하나 집어넣을때마다 
-pow함수를 겁나게 넣어야 하는데, 얘를 쓰면 곱셈 몇번 덧셈 몇번으로 마법같이 해결*/
-double eval_taylor_poly(const TaylorResult* tr, double x) {
-    double dx = x - tr->center_a;
-    double sum = tr->coeffs[tr->degree];
-    for (int k = tr->degree - 1; k >= 0; k--) {
-        sum = sum * dx + tr->coeffs[k];
-    }
-    return sum;
 }
 
 

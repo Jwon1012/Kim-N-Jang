@@ -1,30 +1,74 @@
 ﻿#include "CalcTech공용두꺼비집.h"
 
+// [모듈III_test.c 상단 내부 전용 전방 선언]
+static int compare_doubles(const void* a, const void* b);
+static bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
+static int gcd_int(int a, int b);
+static double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int order);
+static bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int order, double* out_root);
+static void push_keypoint(GraphKeyPoint* list, int* count, int max_count, KeyPointType type, double x, double y);
+static void check_direct_candidate(
+    const ASTNode* f_root, const ASTNode* g_root, double x_cand, double x_min, 
+    double x_max, GraphKeyPoint* out_points, int* count, int max_points);
+static bool is_valid_period(const ASTNode* root, double p);
+static double reduce_to_minimal_period(const ASTNode* root, double p);
+static void push_asymptote_record(
+    GAsymp* list, int* count, int max_count,
+    ASType type, double val, int direction,
+    bool is_confirmed, double residual, const char* );
+static bool check_vertical_one_sided_divergence(const ASTNode* root, double x0, int dir);
+static double refine_vertical_asymptote_x(const ASTNode* root, double a, double b);
+static bool evaluate_residual_convergence_dir(
+    const ASTNode* f_root, const ASTNode* cand_g_root,
+    int dir, double* out_final_residual, bool* out_is_converged);
+static bool detect_self_horizontal_dir(const ASTNode* root, int dir, double* out_b);
+
 // [모듈 III] C-Python 파이프라인 연결 준비
 
 //1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
-// 서브트리에 상수 'pi'가 포함되어 있는지 확인 (예: sin(2*pi*x) 판별용)
+// 서브트리에 상수 'π '가 포함되어 있는지 확인 (예: sin(2*π *x) 판별용)
 bool ast_contains_pi(const ASTNode* node) 
 {
     if (node == NULL) return false;
-    // 변수 노드(NODE_VARIABLE)이면서 이름표가 "pi"인 경우
-    if (node->type == NODE_VARIABLE && strcmp(node->value, "pi") == 0) return true;
-    // 왼쪽 자식 또는 오른쪽 자식 서브트리 중 한 곳이라도 "pi"가 있으면 true 반환
+    // 숫자/변수 노드(NODE_NUMBER/NODE_VARIABLE)이면서 이름표가 "π "인 경우
+    if ( (node->type == NODE_NUMBER ||node->type == NODE_VARIABLE) && strcmp(node->value, "pi") == 0) return true;
+    // 왼쪽 자식 또는 오른쪽 자식 서브트리 중 한 곳이라도 "π "가 있으면 true 반환
     return ast_contains_pi(node->left) || ast_contains_pi(node->right);
+}
+
+// 트리 조각 안에 변수 'x'가 하나라도 있는지 검사 (x*x과 x^2을 정확히 인식할 수 있게 하는 도우미함수)
+static bool ast_contains_x(const ASTNode* node) {
+    if (node == NULL) return false;
+    if (node->type == NODE_VARIABLE && strcmp(node->value, "x") == 0) return true;
+    for (int i = 0; i < node->arg_count; i++) {
+        if (ast_contains_x(node->args[i])) return true;
+    }
+    return ast_contains_x(node->left) || ast_contains_x(node->right);
 }
 
 // 서브트리에 변수 'x' 외에 비선형 연산(exp, ln, 2차 이상 거듭제곱 등)이 있는지 확인
 bool ast_is_nonlinear_arg(const ASTNode* node) {
     if (!node) return false;
     if (node->type == NODE_FUNCTION) return true; // sin(exp(x)), sin(ln(x)) 등
-    if (node->type == NODE_BINARY_OP && strcmp(node->value, "^") == 0) 
-    {
-        // 지수가 0,1이 아닌 거듭제곱(x^2 등)이 들어있으면 비선형 인자로 간주
-        double exp_val = atof(node->right->value);
-        bool is_linear_exp = (fabs(exp_val - 1.0) <= 1e-9) || (fabs(exp_val - 0.0) <= 1e-9); //지수가 0이거나 1인 경우
-        if (!is_linear_exp) {
-            return true;
+
+    // 1. 곱셈(*): 양쪽에 모두 x가 있으면 비선형 (예: x*x)
+    if (node->type == NODE_BINARY_OP && strcmp(node->value, "*") == 0) {
+        if (ast_contains_x(node->left) && ast_contains_x(node->right)) return true;
+    }
+
+    // 2. 나눗셈(/): 분모에 x가 있으면 비선형 (예: 1/x)
+    if (node->type == NODE_BINARY_OP && strcmp(node->value, "/") == 0) {
+        if (ast_contains_x(node->right)) return true;
+    }
+
+    // 3. 거듭제곱(^)
+    if (node->type == NODE_BINARY_OP && strcmp(node->value, "^") == 0) {
+        if (node->right != NULL && node->right->type == NODE_NUMBER) {
+            double exp_val = atof(node->right->value);
+            bool is_linear_exp = (fabs(exp_val - 1.0) <= 1e-9) || (fabs(exp_val - 0.0) <= 1e-9);
+            if (!is_linear_exp) return true;
         }
+        else return true;
     }
     return ast_is_nonlinear_arg(node->left) || ast_is_nonlinear_arg(node->right);
 }
@@ -35,18 +79,16 @@ bool ast_is_nonlinear_arg(const ASTNode* node) {
 
     // 1. 삼각함수(sin, cos, tan) 노드를 만난 경우
     if (node->type == NODE_FUNCTION &&
-        (strcmp(node->value, "sin") == 0 ||
+           (strcmp(node->value, "sin") == 0 ||
             strcmp(node->value, "cos") == 0 ||
-            strcmp(node->value, "tan") == 0) ||
+            strcmp(node->value, "tan") == 0 ||
             strcmp(node->value, "sec") == 0 ||
             strcmp(node->value, "csc") == 0 ||
-            strcmp(node->value, "cot") == 0)
-    {
-
-        // 2순위: 내부 인자가 비선형이면(sin(x^2), sin(exp(x))) 10진 눈금 확정 (어차피 수학적으로 얻어갈 부분이 전무)
+            strcmp(node->value, "cot") == 0)) {
+        // 내부 인자가 비선형이면(sin(x^2), sin(exp(x))) 10진 눈금 확정 (어차피 수학적으로 얻어갈 부분이 전무)
         if (ast_is_nonlinear_arg(node->left)) return 0;
 
-        // 3순위: 선형 인자에 'pi'가 이미 곱해져 있으면(tan(pi*x), sin(2*pi*x)) 주기가 유리수이므로 10진 눈금
+        // 선형 인자에 'π '가 이미 곱해져 있으면(tan(π *x), sin(2*π *x)) 주기가 유리수이므로 10진 눈금
         if (ast_contains_pi(node->left)) return 0;
 
         // 순수 삼각함수(sin(x), cos(2x))이므로 π 라디안 눈금 후보
@@ -55,19 +97,17 @@ bool ast_is_nonlinear_arg(const ASTNode* node) {
 
     // 2. 삼각함수 바깥에 변수 'x', 지수(exp), 로그(ln)가 섞여 있는 경우 (예: x - sin(x))
     if (!inside_trig) {
-        if (node->type == NODE_VARIABLE && strcmp(node->value, "x") == 0) {
-            return 0; // 1순위: 비주기 다항 항 혼합 -> 10진 눈금
-        }
-        if (node->type == NODE_FUNCTION) {
-            // 삼각함수 외의 다른 초월함수(exp, ln, sqrt 등)가 바깥에 존재
-            return 0;
-        }
-    }
+        // 비주기 다항 항 혼합 -> 10진 눈금
+        if (node->type == NODE_VARIABLE && strcmp(node->value, "x") == 0) return 0;
 
+        // 삼각함수 외의 다른 초월함수(exp, ln, √ 등)가 바깥에 존재
+        if (node->type == NODE_FUNCTION) return 0;
+    }
     int left_res = analyze_ast_pi_mode(node->left, inside_trig);
     int right_res = analyze_ast_pi_mode(node->right, inside_trig);
 
     // 어느 한쪽이라도 10진 강제(0) 판정이 나면 전체 식은 비주기 함수로 10진 눈금(0) 우선
+    // 3개 이상의 항일지언정 어차피 and조건으로 묶여있는 한 모든 항이 같은 숫자여야함.
     if (left_res == 0 || right_res == 0) return 0;
     if (left_res == 1 || right_res == 1) return 1;
     return -1;
@@ -91,6 +131,7 @@ double calc_nice_step(double range, int target_ticks) {
     double mag = pow(10.0, exponent);
     double fraction = raw_step / mag;
 
+    //사람의 눈에는 1,2,5,10의 곱꼴로 된 단위가 눈에 잘 보임
     double nice_fraction;
     if (fraction < 1.5)      nice_fraction = 1.0;
     else if (fraction < 3.5) nice_fraction = 2.0;
@@ -99,7 +140,6 @@ double calc_nice_step(double range, int target_ticks) {
 
     return nice_fraction * mag;
 }
-
 double calc_pi_nice_step(double range, int target_ticks) {
     double pi_units = calc_nice_step(range / M_PI, target_ticks);
     // 1.0π 대신 π/2 단위가 자연스럽게 나오도록 보정
@@ -109,8 +149,9 @@ double calc_pi_nice_step(double range, int target_ticks) {
     return pi_units * M_PI;
 }
 
-// qsort용 double 오름차순 비교 함수 (백분위 이상치 컷용)
-  int compare_doubles(const void* a, const void* b) {
+// 백분위 이상치 컷 함수 for 극단값 제거
+// 1,0,-1반환 for 오름차순 정렬
+static int compare_doubles(const void* a, const void* b) {
     double da = *(const double*)a;
     double db = *(const double*)b;
     if (da < db) return -1;
@@ -118,8 +159,9 @@ double calc_pi_nice_step(double range, int target_ticks) {
     return 0;
 }
 
-// [보조 함수] 단일 함수 배열에서 점근선을 마스킹하고 유효 [y_low, y_high] 추출
-  bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high) {
+// 점근선 근처에서 y값이 무한대로 폭발해도 그래프 본체가 납작해지지 않게
+// 상·하위 극단값(이상치)을 잘라내고 유효한 y축 시야 범위만 건져내는 함수
+static bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high) {
     if (!y_arr || count <= 0) return false;
 
     double* valid_vals = (double*)malloc(sizeof(double) * count);
@@ -179,9 +221,9 @@ AScale compute_dynamic_axis_scale(
     AScale res;
     res.x_min = x_min;
     res.x_max = x_max;
-    res.is_1to1_locked = (opt->scale_target == SCALE_LOCK_1TO1) ? 1 : 0;
+    res.is_1to1_locked = (opt->scale_target == SCALE_LOCK_1TO1) ? 1 : 0; //1 -> 보정불필요 (체급이 비슷한 함수) 0 -> 보정 필요
 
-    int ticks = (opt->target_ticks > 0) ? opt->target_ticks : 8;
+    int ticks = (opt->target_ticks > 0) ? opt->target_ticks : 8; //
     double x_range = fabs(x_max - x_min);
 
     // 1. X축 π 라디안 모드 판별 및 X축 Nice-Step 계산
@@ -217,8 +259,8 @@ AScale compute_dynamic_axis_scale(
     }
     else if (has_f && has_g) {
         // SCALE_AUTO_UNION (기본값): 두 함수 유효 치역의 합집합
-        y_low = (f_low < g_low) ? f_low : g_low;
-        y_high = (f_high > g_high) ? f_high : g_high;
+        y_low = (f_low < g_low) ? f_low : g_low; //더 작은 쪽을 값으로
+        y_high = (f_high > g_high) ? f_high : g_high; //더 큰쪽을 값으로
     }
     else if (has_f) {
         y_low = f_low; y_high = f_high;
@@ -265,7 +307,7 @@ AScale compute_dynamic_axis_scale(
 //2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
 
 // 두 수의 최대공약수를 출력하는 함수 (for 기약분수화)
-  int gcd_int(int a, int b) {
+static int gcd_int(int a, int b) {
     a = abs(a);
     b = abs(b);
     while (b != 0) {
@@ -277,24 +319,22 @@ AScale compute_dynamic_axis_scale(
 }
 
 // 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
+// e.g. 방정식 x^2 = 97의 근: x = ±√97, 2^x = x+2의 근: x = 2, -1.69009 
   void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size) {
     const double EPS = 1e-7;
 
     if (isnan(val) || isinf(val)) {
         snprintf(out_buf, buf_size, "NaN");
-        return;
-    }
+        return;}
     if (fabs(val) < EPS) {
         snprintf(out_buf, buf_size, "0");
-        return;
-    }
+        return;}
 
     // 1. 정수 판별
     double r_int = round(val);
     if (fabs(val - r_int) < EPS) {
         snprintf(out_buf, buf_size, "%.0f", r_int);
-        return;
-    }
+        return;}
 
     // 2. 유리수 p/q 판별 (분모 상한 q <= 100, 소수 첫째 자리 k/10 포함)
     for (int q = 2; q <= 100; q++) {
@@ -306,70 +346,80 @@ AScale compute_dynamic_axis_scale(
             int rq = q / g;
             if (rq == 1) snprintf(out_buf, buf_size, "%d", p);
             else snprintf(out_buf, buf_size, "%d/%d", p, rq);
-            return;
-        }
+            return;}
     }
 
     // 3. π 유리수배 (p*π / q, 분모 상한 q <= 12)
-    double pi_ratio = val / M_PI;
+    double pi_ratio = val / M_PI; 
     for (int q = 1; q <= 12; q++) {
         double p_dbl = round(pi_ratio * q);
-        if (fabs(p_dbl) > 0 && fabs(pi_ratio - p_dbl / q) < EPS) {
+    // [파이 분수 복원 판정] 입력값에서 π 를 나눈 비율(π _ratio)이 0이 아닌 기약분수(p/q)와
+    // 오차(EPS) 이내로 일치하면 진짜 (p/q)*π  꼴로 확정 (예: 1.047197... -> π /3)
+        if (fabs(p_dbl) > 0 && fabs(pi_ratio - p_dbl / q) < EPS) { 
             int p = (int)p_dbl;
             int g = gcd_int(p, q);
             p /= g;
-            int rq = q / g;
+            int rq = q / g; 
             if (rq == 1) {
-                if (p == 1)       snprintf(out_buf, buf_size, "pi");
-                else if (p == -1) snprintf(out_buf, buf_size, "-pi");
-                else              snprintf(out_buf, buf_size, "%dpi", p);
+                if (p == 1)       snprintf(out_buf, buf_size, "π");
+                else if (p == -1) snprintf(out_buf, buf_size, "-π");
+                else              snprintf(out_buf, buf_size, "%dπ", p);
             }
             else {
-                if (p == 1)       snprintf(out_buf, buf_size, "pi/%d", rq);
-                else if (p == -1) snprintf(out_buf, buf_size, "-pi/%d", rq);
-                else              snprintf(out_buf, buf_size, "%dpi/%d", p, rq);
+                if (p == 1)       snprintf(out_buf, buf_size, "π/%d", rq);
+                else if (p == -1) snprintf(out_buf, buf_size, "-π/%d", rq);
+                else              snprintf(out_buf, buf_size, "%dπ/%d", p, rq);
             }
             return;
         }
     }
 
-    // 4. 단순 제곱근 ±sqrt(d) 판별 (근호 상한 d <= 100)
+    // 4. 단순 제곱근 ±√(d) 판별 (근호 상한 d <= 100)
     double sq = val * val;
     double r_sq = round(sq);
     if (r_sq >= 2.0 && r_sq <= 100.0 && fabs(sq - r_sq) < EPS) {
         int d = (int)r_sq;
         int root_d = (int)round(sqrt((double)d));
         if (root_d * root_d != d) {
-            snprintf(out_buf, buf_size, "%ssqrt(%d)", (val < 0 ? "-" : ""), d);
+            snprintf(out_buf, buf_size, "%s√(%d)", (val < 0 ? "-" : ""), d);
             return;
         }
     }
 
-    // 5. 이차방정식 근의 공식 형태 (p ± sqrt(d)) / q (삼차함수 극점, etc.)
-    for (int q = 1; q <= 20; q++) 
+    // 5. 이차방정식 근의 공식 형태 (p ± √(d)) / q (삼차함수 극점, etc.)
+    const double QUAD_EPS = 1e-9; // 우연한 초월수 일치 방지를 위해 정밀도 강화
+    for (int q = 1; q <= 12; q++)
     {
-        for (int d = 2; d <= 100; d++) 
+        for (int d = 2; d <= 50; d++)
         {
-            int root_d = (int)round(sqrt((double)d));
-            if (root_d * root_d == d) continue; // 완전제곱수 제외
+            // 제곱인수 포함 수 제외 (예: 4, 8, 9, 12 -> 2*√(2) 등은 완전제곱인수 제거)
+            bool has_sq_factor = false; //무죄 추정
+            for (int k = 2; k * k <= d; k++) {
+                if (d % (k * k) == 0) { has_sq_factor = true; break; }
+            }
+            if (has_sq_factor) continue;
 
             double sq_d = sqrt((double)d);
-            // +sqrt(d) 경우
+
+            // +√(d) 경우
             double p_plus = round(val * q - sq_d);
-            if (fabs(val - (p_plus + sq_d) / q) < EPS) 
+            if (fabs(val - (p_plus + sq_d) / q) < QUAD_EPS)
             {
                 int p = (int)p_plus;
-                if (q == 1) snprintf(out_buf, buf_size, "%d + sqrt(%d)", p, d);
-                else        snprintf(out_buf, buf_size, "(%d + sqrt(%d))/%d", p, d, q);
+                if (p == 0)      snprintf(out_buf, buf_size, "√(%d)/%d", d, q);
+                else if (q == 1) snprintf(out_buf, buf_size, "%d + √(%d)", p, d);
+                else             snprintf(out_buf, buf_size, "(%d + √(%d))/%d", p, d, q);
                 return;
             }
-            // -sqrt(d) 경우
+
+            // -√(d) 경우 (부호 '-' 주의)
             double p_minus = round(val * q + sq_d);
-            if (fabs(val - (p_minus - sq_d) / q) < EPS) 
+            if (fabs(val - (p_minus - sq_d) / q) < QUAD_EPS)
             {
                 int p = (int)p_minus;
-                if (q == 1) snprintf(out_buf, buf_size, "%d - sqrt(%d)", p, d);
-                else        snprintf(out_buf, buf_size, "(%d - sqrt(%d))/%d", p, d, q);
+                if (p == 0)      snprintf(out_buf, buf_size, "-√(%d)/%d", d, q);
+                else if (q == 1) snprintf(out_buf, buf_size, "%d - √(%d)", p, d);
+                else             snprintf(out_buf, buf_size, "(%d - √(%d))/%d", p, d, q);
                 return;
             }
         }
@@ -409,33 +459,27 @@ AScale compute_dynamic_axis_scale(
 // 심화 특징점(절편, 극점, 변곡점, 교점, 극한값만 있는 점, 주기) 정밀 추출기
 
 // 대상 함수 mode: 0 = f(x), 1 = f'(x), 2 = f''(x), 3 = f(x) - g(x)
-  double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode) {
-    const double h = 1e-6;
-    if (mode == 0) return eval_ast(f, x);
-    if (mode == 3) return eval_ast(f, x) - eval_ast(g, x);
-    if (mode == 1) {
-        // 중앙차분 1차 도함수
-        return (eval_ast(f, x + h) - eval_ast(f, x - h)) / (2.0 * h);
-    }
-    if (mode == 2) {
-        // 중앙차분 2차 도함수
-        return (eval_ast(f, x + h) - 2.0 * eval_ast(f, x) + eval_ast(f, x - h)) / (h * h);
-    }
-    return NAN;
+static double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode) {
+  if (mode == 0) return eval_ast(f, x);
+  if (mode == 1) return num_diff_1st(f, x);
+  if (mode == 2) return num_diff_2nd(f, x);
+  if (mode == 3) return eval_ast(f, x) - eval_ast(g, x);
+  return NAN;
 }
 
 // [a, b] 구간 내 이분법 (사잇값 정리 알고리즘 ver.) + 뉴턴-랩슨 하이브리드 정밀 근 탐색
 // true -> 구간 내 근 존재, false -> 존재X
+
 /* ※이분법만 쓰기엔 x축을 스치지만 하는 함수를 못잡아내고(사잇값 정리를 써도 두 함수값의 곱이 양수가 나옴)
     뉴런-랩슨은 융통성이 없어서 같이 사용 */
-  bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root) {
+static bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root) {
     double fa = eval_target_func(f, g, a, mode);
     double fb = eval_target_func(f, g, b, mode);
     if (isnan(fa) || isinf(fa) || isnan(fb) || isinf(fb)) return false;
 
     if (fabs(fa) < 1e-13) { *out_root = a; return true; }
     if (fabs(fb) < 1e-13) { *out_root = b; return true; }
-    if (fa * fb > 0.0) return false; //이분법 구간
+    if (fa * fb > 0.0) return false; //이분법 구간 (스치는 경우는 일단 패스)
 
     double low = a, high = b;
     double x = 0.5 * (low + high);
@@ -466,7 +510,7 @@ AScale compute_dynamic_axis_scale(
 }
 
 // 특징점 중복 등록 방지 및 구조체 조립 도우미
-void push_keypoint(
+static void push_keypoint(
     GraphKeyPoint* list, int* count, int max_count,
     KeyPointType type, double x, double y
 ) {
@@ -477,11 +521,7 @@ void push_keypoint(
     if (fabs(y) < 1e-12) y = 0.0;
 
     // 동일한 위치·타입 중복 방지
-    for (int i = 0; i < *count; i++) {
-        if (list[i].type == type && fabs(list[i].x - x) < 1e-7 && fabs(list[i].y - y) < 1e-7) {
-            return;
-        }
-    }
+    for (int i = 0; i < *count; i++) {if (list[i].type == type && fabs(list[i].x - x) < 1e-7 && fabs(list[i].y - y) < 1e-7) return;}
 
     char x_str[32], y_str[32];
     format_symbolic_or_decimal(x, x_str, sizeof(x_str));
@@ -495,7 +535,7 @@ void push_keypoint(
 }
 
 //사용자가 제공한 범위 내에 함수의 특징점이 있는지 확인하는 함수
-void check_direct_candidate(
+static void check_direct_candidate(
     const ASTNode* f_root, const ASTNode* g_root,
     double x_cand, double x_min, double x_max,
     GraphKeyPoint* out_points, int* count, int max_points
@@ -519,23 +559,23 @@ void check_direct_candidate(
 
     // 교점 검증: f(x) - g(x) == 0
     if (g_root && fabs(eval_target_func(f_root, g_root, x_cand, 3)) < 1e-11) {
-        push_keypoint(out_points, count, max_points, KP_INTERSECTION, x_cand, eval_ast(f_root, x_cand));
-    }
+        push_keypoint(out_points, count, max_points, KP_INTERSECTION, x_cand, eval_ast(f_root, x_cand));}
 }
 
 // 주기 존재여부 확인 함수
-bool is_valid_period(const ASTNode* f, double p) {
+static bool is_valid_period(const ASTNode* f, double p) {
     if (!f || isnan(p) || isinf(p) || p <= 1e-6) return false;
 
     const double EPS = 1e-6;
-    const double PHI = 0.618033988749895; // 격자 겹침(앨리어싱) 방지용 황금비 스텝
+    const double PHI = (sqrt(5) - 1.0) / 2.0; // 격자 겹침(앨리어싱) 방지용 황금비 스텝 (보다 정확히는 황금비의 역수)
+    //위의 PHI없으면 sin(x)의 주기가 π로 오판 -> 어떤 유리수 격자와 엇박자이고 유리수로 근사시키기 가장 어려운 무리수다운 무리수 추가
     int valid_checks = 0;
     double first_val = NAN;
     bool is_constant = true;
 
     // 비균일 샘플 25개 지점에서 f(x) == f(x + p) 검증
     for (int i = 0; i < 25; i++) {
-        double x = -3.7 + i * PHI * (1.0 + 0.15 * p);
+        double x = -3.7 + i * PHI * (1.0 + 0.15 * p); //시작점 + 간격 * 보폭배율
         double y1 = eval_ast(f, x);
         double y2 = eval_ast(f, x + p);
 
@@ -560,7 +600,8 @@ bool is_valid_period(const ASTNode* f, double p) {
 }
 
 // [내부 도우미] 찾은 주기 P를 정수 k(12 -> 2)로 나누어 최소 주기(기본 주기)로 축소
-double reduce_to_minimal_period(const ASTNode* f, double p) {
+// 계속 1씩 줄이다가 주기가 아니라고 뜨면 그 직전의 값을 주기로 간주
+static double reduce_to_minimal_period(const ASTNode* f, double p) {
     for (int k = 12; k >= 2; k--) {
         double sub_p = p / (double)k;
         if (is_valid_period(f, sub_p)) {
@@ -594,53 +635,52 @@ double detect_function_period(const ASTNode* f_root, double search_max, char* ou
         }
     }
 
-    // 2단계: 임의 계수 주기함수(예: sin(1.7x)) 대비 수치 브래킷팅 탐색
+// 1단계에서 못 찾았을 때만 2단계 저인망 탐색 진입
     if (isnan(found_p)) {
-        // 정의역이 유효하고 기울기가 0이 아닌 기준점 x0 선택
+        // (특수각·π  배수)에서 이미 주기를 찾았으면 2단계로 내려갈 필요 없이 바로 퇴근
         double x0 = 0.37;
         double y0 = eval_ast(f_root, x0);
+        // 2단계: sin(1.7x)처럼 파이와 무관한 생소한 계수를 가진 주기함수 추적용 저인망 탐색
+        // 원점(0) 대칭 함정을 피하려고 비대칭 기준점(0.37)을 먼저 찔러보고, 막히면 1.13으로 우회
         if (isnan(y0) || isinf(y0) || fabs(y0) > 1e5) {
             x0 = 1.13;
             y0 = eval_ast(f_root, x0);
         }
+        if (isnan(y0) || isinf(y0)) return NAN;
 
-        if (!isnan(y0) && !isinf(y0)) {
-            const int STEPS = 1500;
-            double dp = search_max / (double)STEPS;
+        const int STEPS = 1500;
+        double dp = search_max / (double)STEPS;
 
-            for (int i = 1; i < STEPS; i++) {
-                double p1 = i * dp;
-                double p2 = p1 + dp;
-                double d1 = eval_ast(f_root, x0 + p1) - y0;
-                double d2 = eval_ast(f_root, x0 + p2) - y0;
+        for (int i = 1; i < STEPS; i++) {
+            double p1 = i * dp;
+            double p2 = p1 + dp;
+            double d1 = eval_ast(f_root, x0 + p1) - y0;
+            double d2 = eval_ast(f_root, x0 + p2) - y0;
 
-                if (isnan(d1) || isnan(d2) || fabs(d1) > 1e5 || fabs(d2) > 1e5) continue;
+            if (isnan(d1) || isnan(d2) || fabs(d1) > 1e5 || fabs(d2) > 1e5) continue;
+            if (d1 * d2 > 0.0) continue;
 
-                // f(x0 + p) == f(x0) 후보 구간 포착 시 이분법 정밀화
-                if (d1 * d2 <= 0.0) {
-                    double lo = p1, hi = p2;
-                    for (int iter = 0; iter < 40; iter++) {
-                        double mid = 0.5 * (lo + hi);
-                        double dm = eval_ast(f_root, x0 + mid) - y0;
-                        if (fabs(dm) < 1e-12) { lo = hi = mid; break; }
-                        if (d1 * dm <= 0.0) hi = mid;
-                        else { lo = mid; d1 = dm; }
-                    }
-                    double cand_p = 0.5 * (lo + hi);
-                    if (is_valid_period(f_root, cand_p)) {
-                        found_p = reduce_to_minimal_period(f_root, cand_p);
-                        break;
-                    }
-                }
+            double lo = p1, hi = p2;
+            for (int iter = 0; iter < 40; iter++) {
+                double mid = 0.5 * (lo + hi);
+                double dm = eval_ast(f_root, x0 + mid) - y0;
+
+                if (fabs(dm) < 1e-12) { lo = mid; hi = mid; break; }
+                if (d1 * dm <= 0.0) hi = mid;
+                else { lo = mid; d1 = dm; }
+            }
+
+            double cand_p = 0.5 * (lo + hi);
+            if (is_valid_period(f_root, cand_p)) {
+                found_p = reduce_to_minimal_period(f_root, cand_p);
+                break; // return 대신 break로 빠져나와 3단계로 이동
             }
         }
     }
-
-    // 3단계: 발견된 최소 주기를 기호 문자열(예: "2pi", "pi/2", "2")로 변환
+    // 3단계: 발견된 최소 주기를 기호 문자열(예: "2π ", "π /2", "2")로 변환
     if (!isnan(found_p) && out_label && label_size > 0) {
         format_symbolic_or_decimal(found_p, out_label, label_size);
     }
-
     return found_p;
 }
 
@@ -660,8 +700,7 @@ int extract_graph_keypoints(
     if (x_min <= 0.0 && x_max >= 0.0) {
         double y0 = eval_ast(f_root, 0.0);
         if (!isnan(y0) && !isinf(y0)) {
-            push_keypoint(out_points, &count, max_points, KP_Y_INTERCEPT, 0.0, y0);
-        }
+            push_keypoint(out_points, &count, max_points, KP_Y_INTERCEPT, 0.0, y0);}
     }
 
     // 2A. 소수 첫째 자리(0.1 단위) 유리수 근 우선 검증 (초월방정식 2^x = x + 2 등의 유리수 해 보호)
@@ -705,27 +744,39 @@ int extract_graph_keypoints(
 
         // (b) 극점 (극대/극소): f'(x) = 0 및 2계 도함수 부호 판별
         if (refine_root_hybrid(f_root, NULL, a, b, 1, &root)) {
-            double y_ext = eval_ast(f_root, root);
+            // 0.1 단위 주요 격자점(0, 1 등)에 극도로 근접한 부동소수점 오차 보정
+            double snap = round(root * 10.0) / 10.0;
+            if (fabs(root - snap) < 1e-6) root = snap;
+
             double d2 = eval_target_func(f_root, NULL, root, 2);
-            if (!isnan(y_ext) && !isinf(y_ext) && !isnan(d2) && fabs(d2) > 1e-7) {
+            bool is_hole = false;
+            double y_ext = eval_with_singularity_guard(f_root, root, &is_hole);
+
+            if (!is_hole && !isnan(y_ext) && !isinf(y_ext) && !isnan(d2) && fabs(d2) > 1e-7) {
                 KeyPointType ext_type = (d2 < 0.0) ? KP_LOCAL_MAX : KP_LOCAL_MIN;
                 push_keypoint(out_points, &count, max_points, ext_type, root, y_ext);
-                // X축에 접하는 중근(극값이면서 동시에 y = 0) 보완 등록
                 if (fabs(y_ext) < 1e-9) {
                     push_keypoint(out_points, &count, max_points, KP_X_INTERCEPT, root, 0.0);
                 }
             }
         }
-        // (c) 변곡점: f''(x) = 0 (전후 2계 도함수 부호 반전 확인)
+
+        // (c) 변곡점: f''(x) = 0 (전후 2계 도함수 부호 반전 + 노이즈 임계값 확인)
         if (refine_root_hybrid(f_root, NULL, a, b, 2, &root)) {
-            double y_inf = eval_ast(f_root, root);
-            double d2_left = eval_target_func(f_root, NULL, root - 1e-4, 2);
-            double d2_right = eval_target_func(f_root, NULL, root + 1e-4, 2);
-            if (!isnan(y_inf) && !isinf(y_inf) && (d2_left * d2_right < 0.0)) {
+            double snap = round(root * 10.0) / 10.0;
+            if (fabs(root - snap) < 1e-6) root = snap;
+
+            bool is_hole = false;
+            double y_inf = eval_with_singularity_guard(f_root, root, &is_hole);
+            double d2_left = eval_target_func(f_root, NULL, root - 1e-3, 2);
+            double d2_right = eval_target_func(f_root, NULL, root + 1e-3, 2);
+
+            if (!is_hole && !isnan(y_inf) && !isinf(y_inf) &&
+                fabs(d2_left) > 1e-6 && fabs(d2_right) > 1e-6 &&
+                (d2_left * d2_right < 0.0)) {
                 push_keypoint(out_points, &count, max_points, KP_INFLECTION, root, y_inf);
             }
         }
-
         // (d) 두 함수의 교점: f(x) - g(x) = 0
         if (g_root && refine_root_hybrid(f_root, g_root, a, b, 3, &root)) {
             double y_int = eval_ast(f_root, root);
@@ -758,57 +809,6 @@ int extract_graph_keypoints(
 }
 
 // 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
-
-// [해결책 3] 고계 미분 및 테일러 급수 근사 시 부동소수점 오차 누적 억제
-// 차수(order)에 맞춰 최적 스텝 크기 h_n = eps^(1/(n+2)) 동적 조정 및 확장 정밀도(long double) 연산
-// 대상의 크기에 따라 돋보기의 배율을 자동으로 조정해주는 코드
-double eval_nth_derivative_safe(const ASTNode* f, double x, int order) {
-    if (!f || order < 0) return NAN;
-    if (order == 0) return eval_ast(f, x);
-
-    // 돋보기 배율 결정
-    const long double LDBL_EPS = 1e-16L; 
-    double h = (double)powl(LDBL_EPS, 1.0L / (long double)(order + 2));
-    if (h < 1e-7) h = 1e-7;
-    if (h > 1e-2) h = 1e-2;
-
-    // 1계 ~ 4계 중심 차분 고밀도 스텐실, 함수를 따로 정의하는게 아닌 한번에 계산 (테일러 급수 PIP용 오차 최소화)
-    if (order == 1) {
-        long double fm2 = eval_ast(f, x - 2.0 * h);
-        long double fm1 = eval_ast(f, x - h);
-        long double fp1 = eval_ast(f, x + h);
-        long double fp2 = eval_ast(f, x + 2.0 * h);
-        return (double)((fm2 - 8.0L * fm1 + 8.0L * fp1 - fp2) / (12.0L * h));
-    }
-    if (order == 2) {
-        long double fm2 = eval_ast(f, x - 2.0 * h);
-        long double fm1 = eval_ast(f, x - h);
-        long double f0 = eval_ast(f, x);
-        long double fp1 = eval_ast(f, x + h);
-        long double fp2 = eval_ast(f, x + 2.0 * h);
-        return (double)((-fm2 + 16.0L * fm1 - 30.0L * f0 + 16.0L * fp1 - fp2) / (12.0L * h * h));
-    }
-    if (order == 3) {
-        long double fm2 = eval_ast(f, x - 2.0 * h);
-        long double fm1 = eval_ast(f, x - h);
-        long double fp1 = eval_ast(f, x + h);
-        long double fp2 = eval_ast(f, x + 2.0 * h);
-        return (double)((-fm2 + 2.0L * fm1 - 2.0L * fp1 + fp2) / (2.0L * h * h * h));
-    }
-    if (order == 4) {
-        long double fm2 = eval_ast(f, x - 2.0 * h);
-        long double fm1 = eval_ast(f, x - h);
-        long double f0 = eval_ast(f, x);
-        long double fp1 = eval_ast(f, x + h);
-        long double fp2 = eval_ast(f, x + 2.0 * h);
-        return (double)((fm2 - 4.0L * fm1 + 6.0L * f0 - 4.0L * fp1 + fp2) / (h * h * h * h));
-    }
-
-    // 5계 이상 재귀 호출 시에도 차수별 최적 스텝 유지
-    double h_high = 1e-2;
-    return (eval_nth_derivative_safe(f, x + h_high, order - 1)
-        - eval_nth_derivative_safe(f, x - h_high, order - 1)) / (2.0 * h_high);
-}
 
 // [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
 double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole) {
@@ -886,7 +886,12 @@ int sample_curve_adaptive(
 
 // 4. 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
 // ※점근선의 수학적 정의: 곡선 위의 한 점이 정해진 직선에 한없이 가까워질때 두 대상 사이의 거리가 0에 수렴하는 기준 직선
-/* [점근선 추출 및 검증 파이프라인 플로우]
+
+/* [점근선 추출 및 검증 파이프라인]
+  0. 기존에는 모듈3에서만 구현하려 했으나 y = g(x)꼴의 점근선 추출 로직을 구현할때
+  예외처리를 아주 까다롭게 해야해서 
+  다른 모듈에서 갖고온 점근선 후보를 테스트 해보는 식으로 변경
+
   1. [모듈 5: Python 심볼릭 1차 후보 선출]
      - 분수함수의 분모가 0이 되는 지점(수직 후보 x = a) 및
        다항식 나눗셈·극한 연산을 통한 비수직 점근선 후보식(y = g(x)) 1차 추출
@@ -900,12 +905,12 @@ int sample_curve_adaptive(
        화면 내 수직 경계 스캔 및 원거리 코시 수렴 판정으로 수평/수직 후보 추가 발굴
  
   4. [모듈 2·3: 경계 정밀화 및 통합 패키징]
-     - 이분법(이진 탐색)으로 불연속 경계 좌표 정밀화 및 기호 문자열("x = pi/2" 등) 복원
+     - 이분법(이진 탐색)으로 불연속 경계 좌표 정밀화 및 기호 문자열("x = π /2" 등) 복원
      - 확정된 점근선([빵틀 25] GraphAsymptote)을 모듈 2(특이적분 구간 분할) 및
        모듈 3(파이썬 UI 렌더링 패킷)으로 최종 전달
  */
 // 내부 도우미: 중복 점근선 병합 및 방정식 문자열 조립
-void push_asymptote_record(
+static void push_asymptote_record(
     GAsymp* list, int* count, int max_count,
     ASType type, double val, int direction,
     bool is_confirmed, double residual, const char* custom_eq
@@ -961,8 +966,8 @@ void push_asymptote_record(
 
 // [파트 A] 수직 점근선(x = a) 독립 추출기
 // 단측(dir: -1 좌극한, +1 우극한) 로그 스케일 발산 검증
-// y = sqrt(x)의 정의역 끝점 및 y = sin(x)/x의 제거 가능 특이점(Hole) 필터링
-bool check_vertical_one_sided_divergence(const ASTNode* f, double c, int dir) {
+// y = √(x)의 정의역 끝점 및 y = sin(x)/x의 제거 가능 특이점(Hole) 필터링
+static bool check_vertical_one_sided_divergence(const ASTNode* f, double c, int dir) {
     const double DELTAS[] = { 1e-2, 1e-4, 1e-6, 1e-8 };
     double mags[4];
 
@@ -980,7 +985,7 @@ bool check_vertical_one_sided_divergence(const ASTNode* f, double c, int dir) {
 }
 
 // 유효 영역(valid_x)과 NaN/발산 영역(invalid_x) 사이 경계 정밀 이분 탐색
-double refine_vertical_asymptote_x(const ASTNode* f, double valid_x, double invalid_x) {
+static double refine_vertical_asymptote_x(const ASTNode* f, double valid_x, double invalid_x) {
     double lo = valid_x;
     double hi = invalid_x;
 
@@ -1067,12 +1072,10 @@ int extract_vertical_asymptotes(
     return count;
 }
 
-// -------------------------------------------------------------------------
 // [파트 B] 비수직 점근선(수평·사선·곡선) 잔차 r(x) = |f(x) - g(x)| 검증기
-// -------------------------------------------------------------------------
 
 // 한쪽 무한대 방향(dir: +1 또는 -1)에서 후보 식 cand_g_root에 대한 잔차 r(x) 수렴 검사
-bool evaluate_residual_convergence_dir(
+static bool evaluate_residual_convergence_dir(
     const ASTNode* f_root,
     const ASTNode* cand_g_root,
     int dir,
@@ -1183,7 +1186,7 @@ bool verify_candidate_asymptote_expr(
 }
 
 // C 자체 보조 탐색: 원거리 코시 수렴 판정으로 자체 수평 점근선 후보 포착
-bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff) {
+static bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff) {
     const double PROBE_X[] = { 1e2, 1e3, 1e5, 1e7, 1e9 };
     double y[5];
     int n = 0;

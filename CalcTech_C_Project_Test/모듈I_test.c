@@ -1,4 +1,14 @@
 ﻿#include "CalcTech공용두꺼비집.h"
+// 예약어 관리 빵틀 (밀가루고 뭐고 없는 쇠통 빵틀)
+typedef struct {
+    const char* name; //예약어 text
+    ASTNodeType type; //단일 인자 / 다중 인자
+    int expected_args; //요구되는 인자 개수
+} KeywordSpec;
+
+// "어딘가(.c 파일)에 KEYWORD_TABLE과 KEYWORD_COUNT가 정의되어 있으니 갖다 쓰셈"
+extern const KeywordSpec KEYWORD_TABLE[]; // {"함수명", 노드타입, 인자개수}
+extern const int KEYWORD_COUNT;
 
 //모듈I: 사용자가 입력한 수식을 AST로 변환하기
 const KeywordSpec KEYWORD_TABLE[] = {
@@ -43,7 +53,7 @@ const KeywordSpec KEYWORD_TABLE[] = {
 const int KEYWORD_COUNT = sizeof(KEYWORD_TABLE) / sizeof(KEYWORD_TABLE[0]);
 
 // 1. keyword 탐색 함수
-const KeywordSpec* find_keyword(const char* text)
+static const KeywordSpec* find_keyword(const char* text)
 {
     for (int i = 0; i < KEYWORD_COUNT; i++)
     {
@@ -53,10 +63,10 @@ const KeywordSpec* find_keyword(const char* text)
 }
 
 // 2. 예약어 여부 검사 함수
-int is_keyword(const char* str) { return find_keyword(str) != NULL; }
+static int is_keyword(const char* str) { return find_keyword(str) != NULL; }
 
 // 토큰 리스트 메모리 초기화
-void init_token_list(TokenList* list) {
+static void init_token_list(TokenList* list) {
     list->capacity = 16; //리스트 용량
     list->count = 0;
     list->tokens = (Token*)malloc(sizeof(Token) * list->capacity);
@@ -67,7 +77,7 @@ void init_token_list(TokenList* list) {
 }
 
 // 토큰 동적 추가 (용량 초과 시 메모리 2배 확장)
-void add_token(TokenList* list, TokenType type, const char* text)
+static void add_token(TokenList* list, TokenType type, const char* text)
 {
     if (list->count >= list->capacity)
     {
@@ -81,6 +91,32 @@ void add_token(TokenList* list, TokenType type, const char* text)
     strncpy_s(list->tokens[list->count].text, sizeof(list->tokens[list->count].text), text, 31);
     list->tokens[list->count].text[31] = '\0';
     list->count++;
+}
+
+// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
+static int get_op_precedence(const ASTNode* node) {
+    if (node == NULL || node->type != NODE_BINARY_OP) return 99; // 숫자, 변수, 함수는 괄호 불필요
+    if (strcmp(node->value, "=") == 0) return 0;
+    if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) return 1;
+    if (strcmp(node->value, "*") == 0 || strcmp(node->value, "/") == 0) return 2;
+    if (strcmp(node->value, "^") == 0) return 3;
+    return 99;
+}
+
+// [내부 도우미 함수] 버퍼 오버플로우를 막으면서 안전하게 문자열을 이어 붙이는 함수
+static void append_str(char* out_buf, size_t max_len, const char* str);
+
+// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
+static void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len) {
+    if (child == NULL) return;
+    int child_prec = get_op_precedence(child);
+    // 자식 우선순위가 낮거나, 우변인데 우선순위가 같은 경우(예: a - (b + c), (a^b)^c) 괄호 부여
+    bool need_paren = (child_prec < parent_prec) || (is_right_operand && child_prec == parent_prec);
+
+    if (need_paren) append_str(out_buf, max_len, "\\left(");
+    ast_to_latex(child, out_buf, max_len);
+    if (need_paren) append_str(out_buf, max_len, "\\right)");
+
 }
 
 // 4. [핵심] 문자열 수식을 토큰 리스트로 분리하는 1단계 Lexer 함수
@@ -109,7 +145,6 @@ TokenList tokenize(const char* expr) {
             char buf[256] = { 0 };
             int idx = 0;
             while (isalpha((unsigned char)*p) && idx < 255) buf[idx++] = *p++; // <-- idx++ 가 아니라 그냥 idx!
-            buf[idx] = '\0';
             buf[idx] = '\0';
 
             // 예약어면 반드시 TOKEN_KEYWORD로 등록!
@@ -188,7 +223,7 @@ void free_token_list(TokenList* list)
 }
 
 // 노드 동적 생성 함수 (malloc)
-ASTNode * create_ast_node(ASTNodeType type, const char* value)
+static ASTNode * create_ast_node(ASTNodeType type, const char* value)
 {
     ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
     if (node == NULL) return NULL;
@@ -216,7 +251,7 @@ void free_ast(ASTNode* node)
     free(node);
 }
 
-Token* peek(Parser* p)
+static Token* peek(Parser* p)
 {
     if (p->current < p->list->count)
     {
@@ -225,7 +260,7 @@ Token* peek(Parser* p)
     return NULL;
 }
 
-Token* advance(Parser* p)
+static Token* advance(Parser* p)
 {
     Token* t = peek(p);
     if (t != NULL) p->current++;
@@ -233,7 +268,7 @@ Token* advance(Parser* p)
 }
 
 // [최고 우선순위] 숫자, 변수, 괄호, 함수, 단항 부호 처리
-ASTNode* parse_factor(Parser* p)
+static ASTNode* parse_factor(Parser* p)
 {
     Token* t = peek(p);
     if (t == NULL || t->type == TOKEN_EOF) return NULL;
@@ -345,7 +380,7 @@ ASTNode* parse_factor(Parser* p)
 }
 
 // 2. [우선순위 3] 거듭제곱 연산자 ( ^ ) 처리 (우결합: 2^3^2 -> 2^(3^2))
-ASTNode* parse_power(Parser* p)
+static ASTNode* parse_power(Parser* p)
 {
     ASTNode* left = parse_factor(p);
 
@@ -361,7 +396,7 @@ ASTNode* parse_power(Parser* p)
 }
 
 // 3. [우선순위 2] 곱셈 및 나눗셈 연산자 ( * , / ) 및 암묵적 곱셈 (2x, 2sin(x)) 처리
-ASTNode* parse_term(Parser* p)
+static ASTNode* parse_term(Parser* p)
 {
     ASTNode* left = parse_power(p);
 
@@ -424,7 +459,7 @@ ASTNode* parse_expression(Parser* p)
 }
 
 // 가로형 AST 출력 함수
-void print_ast_horizontal(ASTNode* node, char* prefix, int is_left)
+static void print_ast_horizontal(ASTNode* node, char* prefix, int is_left)
 {
     if (node == NULL) return;
 
@@ -523,7 +558,7 @@ void print_ast_tree(ASTNode* root)
 }
 
 // [내부 도우미 함수] 버퍼 오버플로우를 막으면서 안전하게 문자열을 이어 붙이는 함수
-extern void append_str(char* buf, size_t max_len, const char* str) 
+static void append_str(char* buf, size_t max_len, const char* str) 
 {
     if (buf == NULL || str == NULL) return;
     strncat_s(buf, max_len, str, _TRUNCATE);
@@ -543,10 +578,10 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len)
         return;
     }
 
-    // 2. 이항 연산자 (+, -, *, /, ^) 및 단항 음수 (-x)
-    if (node->type == NODE_BINARY_OP) 
+    // 2. 이항 연산자 (+, -, *, /, ^, =) 및 단항 음수 (-x)
+    if (node->type == NODE_BINARY_OP)
     {
-        if (strcmp(node->value, "/") == 0) 
+        if (strcmp(node->value, "/") == 0)
         {
             append_str(out_buf, max_len, "\\frac{");
             ast_to_latex(node->left, out_buf, max_len);
@@ -554,39 +589,42 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len)
             ast_to_latex(node->right, out_buf, max_len);
             append_str(out_buf, max_len, "}");
         }
-        else if (strcmp(node->value, "^") == 0) 
+        else if (strcmp(node->value, "^") == 0)
         {
-            ast_to_latex(node->left, out_buf, max_len);
+            // 밑(left)이 덧셈/곱셈/거듭제곱이면 괄호 부여: (x+1)^2, (x^2)^3
+            append_child_latex(node->left, 3, 1, out_buf, max_len);
             append_str(out_buf, max_len, "^{");
             ast_to_latex(node->right, out_buf, max_len);
             append_str(out_buf, max_len, "}");
         }
-        else if (strcmp(node->value, "*") == 0) 
+        else if (strcmp(node->value, "*") == 0)
         {
-            ast_to_latex(node->left, out_buf, max_len);
+            // 피연산자가 덧셈/뺄셈이면 괄호 부여: (x^2 - 2x) \cdot \exp(-x)
+            append_child_latex(node->left, 2, 0, out_buf, max_len);
             append_str(out_buf, max_len, " \\cdot ");
-            ast_to_latex(node->right, out_buf, max_len);
+            append_child_latex(node->right, 2, 0, out_buf, max_len);
         }
-        else 
+        else
         {
             // 단항 마이너스(-x)인 경우 left가 NULL
-            if (node->left == NULL && strcmp(node->value, "-") == 0) 
+            if (node->left == NULL && strcmp(node->value, "-") == 0)
             {
                 append_str(out_buf, max_len, "-");
-                ast_to_latex(node->right, out_buf, max_len);
+                append_child_latex(node->right, 2, 0, out_buf, max_len); // -(x + 1) 보호
             }
-            else 
+            else
             {
-                ast_to_latex(node->left, out_buf, max_len);
+                int prec = get_op_precedence(node);
+                append_child_latex(node->left, prec, 0, out_buf, max_len);
                 append_str(out_buf, max_len, " ");
                 append_str(out_buf, max_len, node->value);
                 append_str(out_buf, max_len, " ");
-                ast_to_latex(node->right, out_buf, max_len); 
+                // 뺄셈 우변에 덧셈/뺄셈이 올 때 괄호 유지: a - (b + c)
+                append_child_latex(node->right, prec, strcmp(node->value, "-") == 0 ? 1 : 0, out_buf, max_len);
             }
         }
         return;
     }
-
     // 3. 단일 인자 수학 함수 (sin, cos, ln, exp 등)
     if (node->type == NODE_FUNCTION)
     {
@@ -695,5 +733,3 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len)
         return;
     }
 }
-
-

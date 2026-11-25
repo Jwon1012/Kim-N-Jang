@@ -136,11 +136,11 @@ static void print_advanced_analysis(const ASTNode* root, double x_min, double x_
     // 3) 극점 (극댓값 / 극솟값)
     for (int i = 0; i < kp_cnt; i++) {
         if (kps[i].type == KP_LOCAL_MAX) {
-            printf("  ▶ 극대점           : %s  (근사 x=%.4f, y=%.4f)\n", kps[i].label, kps[i].x, kps[i].y);
+            printf("  ▶ 극대점           : %s  (근사 x=%.6f, y=%.6f)\n", kps[i].label, kps[i].x, kps[i].y);
             printed_any = 1;
         }
         else if (kps[i].type == KP_LOCAL_MIN) {
-            printf("  ▶ 극소점           : %s  (근사 x=%.4f, y=%.4f)\n", kps[i].label, kps[i].x, kps[i].y);
+            printf("  ▶ 극소점           : %s  (근사 x=%.6f, y=%.6f)\n", kps[i].label, kps[i].x, kps[i].y);
             printed_any = 1;
         }
     }
@@ -168,7 +168,10 @@ static void print_advanced_analysis(const ASTNode* root, double x_min, double x_
         printf("  ▶ 탐색 구간 [%.2f, %.2f] 내에 표시할 특이점/주기가 없습니다.\n", x_min, x_max);
     }
 }
-
+// main.c -> print_advanced_analysis() 바로 위에 추가
+static int is_exact_decimal_label(const char* str) {
+    // 분수('/')나 기호 상수(pi, e, sqrt, ln)가 없으면 이미 딱 떨어지는 숫자
+    return (strpbrk(str, "/pisqreln") == NULL);}
 int main(void) {
     char input[256];
     double x_min = -10.0, x_max = 10.0;

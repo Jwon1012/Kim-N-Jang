@@ -84,13 +84,6 @@ typedef enum {
     NODE_BINARY_OP  // 이항 연산자 (+, -, *, /, ^)
 } ASTNodeType;
 
-// [빵틀 5] 예약어 관리 빵틀 (밀가루고 뭐고 없는 쇠통 빵틀)
-typedef struct {
-    const char* name; //예약어 text
-    ASTNodeType type; //단일 인자 / 다중 인자
-    int expected_args; //요구되는 인자 개수
-} KeywordSpec;
-
 // [빵틀 6] AST 단일 노드 구조체
 typedef struct ASTNode {
     ASTNodeType type;
@@ -100,10 +93,6 @@ typedef struct ASTNode {
     struct ASTNode* args[4]; //다중 인자 저장용 포인터 배열
     int arg_count; //실제 들어온 인자 개수
 } ASTNode;
-
-// "어딘가(.c 파일)에 KEYWORD_TABLE과 KEYWORD_COUNT가 정의되어 있으니 갖다 쓰셈"
-extern const KeywordSpec KEYWORD_TABLE[]; // {"함수명", 노드타입, 인자개수}
-extern const int KEYWORD_COUNT;
 
 // [빵틀 6] 파서 위치 관리 구조체
 typedef struct {
@@ -214,14 +203,6 @@ typedef struct {
  } NewtonTraceResult;
  typedef NewtonTraceResult NewtonTrace;
 
- // [빵틀 16] k계 도함수 중앙 차분 가중치 테이블 전용 빵틀
- typedef struct {
-     int order;               // 미분 차수 k (0 ~ 14)
-     int radius;              // 좌우 샘플링 반경 R (총 2R + 1개 점 사용)
-     double step_h;           // 해당 차수에 최적화된 스텝 크기 h
-     double weights[32];      // 중앙 차분 가중치 w_j (j = -R ~ +R 를 0 ~ 2R 인덱스에 매핑)
- } FiniteDiffStencil;
- typedef FiniteDiffStencil FDS;
 
  // [빵틀 17] 테일러 급수 근사 결과 빵틀 (최대 14차까지 확장)
  typedef struct {
@@ -342,13 +323,6 @@ typedef struct {
 
 //외부 공개 함수
 //모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
-//키워드 탐색 함수
-const KeywordSpec* find_keyword(const char* text);
-// 토큰 리스트 메모리 초기화 (기본 용량: 16개)
-void init_token_list(TokenList* list);
-
-// 토큰 리스트에 새로운 토큰 1개 동적 추가 (용량 초과 시 2배 자동 확장 via malloc)
-void add_token(TokenList* list, TokenType type, const char* text);
 
 // ★ 입력받은 수식 문자열을 분석하여 토큰 리스트로 반환
 TokenList tokenize(const char* expr);
@@ -359,24 +333,20 @@ void print_tokens(const TokenList* list);
 // 사용이 끝난 토큰 리스트의 동적 할당 메모리 해제
 void free_token_list(TokenList* list);
 
+// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
+int get_op_precedence(const ASTNode* node);
+// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
+void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len);
+
 /* --- 노드 생성 / 해제 및 파서 도우미 선언-- */
-ASTNode* create_ast_node(ASTNodeType type, const char* value);
 void free_ast(ASTNode* node);
-Token* peek(Parser* p);
-Token* advance(Parser* p);
 
 /* --- 재귀 강하 파싱 함수 선언-- - */
 ASTNode* parse_expression(Parser* p);
-ASTNode* parse_term(Parser* p);
-ASTNode* parse_power(Parser* p);
-ASTNode* parse_factor(Parser* p);
 
 /* --- 트리 시각화 출력 함수 선언-- */
-void print_ast_horizontal(ASTNode* node, char* prefix, int is_left);
 void print_ast_tree(ASTNode* root);
 
-/*버퍼 오버플로우를 막으면서 안전하게 문자열을 이어 붙이는 함수*/
-void append_str(char* buf, size_t max_len, const char* str);
 // ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
 void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
 
@@ -414,25 +384,6 @@ TangentInfo calc_tangent_info(const ASTNode* f, double t);
 //곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
 double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
 
-// 범용 심프슨 1/3 적분기: 어떤 경계 조합이든 |top(x) - bot(x)| 적분
-double integrate_between_bounds(
-    const ASTNode* f,
-    TangentInfo tan_info,
-    double a,
-    double b,
-    int top_type,
-    int bot_type,
-    int steps
-);
-
-// [내부 도우미] 중복 없이 핵심 x좌표 추가 & 이분법 근 탐색
-  void add_unique_point(double* arr, int* count, double val, double x_min, double x_max);
-
-// 교점 탐색기
-// mode == 0: 곡선과 접선의 교점 탐색, mode == 1: 곡선과 x축의 교점 탐색 탐색
-  void scan_roots(const ASTNode* f, TangentInfo tan_info, int mode,
-    double x_min, double x_max, double* pts, int* count);
-
 // 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
 int partition_tangent_regions(
     const ASTNode* f,
@@ -457,9 +408,6 @@ void generate_tangent_area_S(
 );
 
 //파생함수 IB: 구간 누적 & 이동 적분
-
-// 기존에 있던 함수에는 절댓값 옵션이 존재하지 않았음
-  double simpson_piece(const ASTNode* f, double x1, double x2, int steps, int is_abs);
 
 //g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
 void generate_def_integral_array(
@@ -522,16 +470,6 @@ void generate_composite_n_axis_arrays(
 );
 
 //합성 방정식의 실근 역추적 & 합성 부등식의 범위 스캐닝
-
-// [내부 도우미] 일반 함수방정식 h(u) = target 의 실근을 함수의 정의역 에서 모두 탐색
- int scan_equation_roots(
-    const ASTNode* func,
-    double target, //f(g(x)) = k에서 g(x)를 t로 치환하여 g(x) = t라는 방정식에서는 t가 target, f(t) = k에선 k가 target
-    double u_min,
-    double u_max,
-    double* out_roots, //실근을 담는 바구니
-    int max_roots
-);
 
 //  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
 //  반환값: 찾아낸 전체 실근 x의 총개수
@@ -597,10 +535,6 @@ GDTraceResult trace_gradient_descent(
 //파생함수 VI: 곡선의 길이
 // 호의 길이 추적
 
-// [내부 도우미] 미소 길이 요소 ds/dx = sqrt(1 + (f'(x))^2) 계산
-double eval_arc_speed(const ASTNode* f, double x);
-// 단일 구간 [a, b]의 정확한 곡선 전체 길이 L 계산 (심프슨 1/3 법칙)
-double calc_arc_length(const ASTNode* f, double a, double b, int steps);
 // [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
 void generate_arc_length_arrays(
     const ASTNode* f,
@@ -618,12 +552,6 @@ ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divi
 
 // 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
 
-
-
-// [내부 도우미] 매개변수 곡선 순간 속력 v(t) = sqrt((g'(t))^2 + (f'(t))^2)
-double eval_param_speed(const ASTNode* f, const ASTNode* g, double t);
-// 단일 매개변수 구간 [t1, t2]의 곡선 궤적 길이 계산 (심프슨 1/3 법칙)
-double calc_param_arc_length(const ASTNode* f, const ASTNode* g, double t1, double t2, int steps);
 // [PIP 파생함수] 매개변수 t에 따른 궤적 좌표 (x(t), y(t)), 순간 속력 v(t), 누적 이동 거리 s(t) 생성
 void generate_param_arc_arrays(
     const ASTNode* f,   // y(t) 수식 트리
@@ -639,12 +567,6 @@ void generate_param_arc_arrays(
 );
 
 //파생함수 VII: 뉴턴-랩슨법으로 교점 탐색 & 접선 궤적 추적
-
-// [내부 도우미] 차함수 h(x) = f(x) - g(x) 계산 (g가 NULL이면 단일 함수 f(x) = 0 모드)
-double eval_diff_func(const ASTNode* f, const ASTNode* g, double x);
-// [내부 도우미] 차함수의 도함수 h'(x) = f'(x) - g'(x) 수치 계산
-double eval_diff_deriv(const ASTNode* f, const ASTNode* g, double x);
-
 NewtonTrace trace_newton_raphson(
     const ASTNode* f,
     const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
@@ -664,21 +586,6 @@ TaylorResult generate_taylor_approx_arrays(
     double* out_poly,   // n차 테일러 다항식 P_n(x) 배열
     double* out_error   // 잔여 오차 |R_n(x)| = |f(x) - P_n(x)| 배열
 );
-
-// [빵틀 조립기] 테일러 급수의 표현한도를 정하는 함수, 이를테면 1로 설정하면 0차 + 1차, 10으로 설정하면 상수부터 10차까지 깡그리 더해서 표현
-/*1. 다항식 (x-1)^k을 전개했을때 나오는 계수들을 모아서 가중치로 재활용
-    2. 그 가중치들을 기준점 주변의 함숫값에 각각 더해서 h^(-k)곱
-    3. k번 미분한 식 출력*/
-FDS build_central_diff_stencil(int order);
-
-// [빵틀 실행기] 진짜로 k번 미분한 값을 토해내는 함수
-double apply_diff_stencil(const ASTNode* f, double a, const FDS* st);
-// [호너 평가기] 임의 차수 테일러 다항식 P_n(x) 고속 계산
-
-/*※호너 평가기: 다항식을 상수 + 계수 * 뭐시깽이 형태로 고치는 마법
-다항식을 그냥 계산하면 2000개의 포인터를 갖고있는 데이터 하나 집어넣을때마다
-pow함수를 겁나게 넣어야 하는데, 얘를 쓰면 곱셈 몇번 덧셈 몇번으로 마법같이 해결*/
-double eval_taylor_poly(const TaylorResult* tr, double x);
 
 //파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
 // [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
@@ -732,12 +639,6 @@ int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
 double calc_nice_step(double range, int target_ticks);
 double calc_pi_nice_step(double range, int target_ticks);
 
-// qsort용 double 오름차순 비교 함수 (백분위 이상치 컷용)
-int compare_doubles(const void* a, const void* b);
-
-// [보조 함수] 단일 함수 배열에서 점근선을 마스킹하고 유효 [y_low, y_high] 추출
-bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
-
 // 동적 축 스케일링 메인 통합 함수 (AScale 산출)
 AScale compute_dynamic_axis_scale(
     const ASTNode* f_root, const ASTNode* g_root,
@@ -748,39 +649,12 @@ AScale compute_dynamic_axis_scale(
 
 //2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
 
-// 두 수의 최대공약수를 출력하는 함수 (for 기약분수화)
-int gcd_int(int a, int b);
-
 // 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
 void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
 
-// 심화 특징점(절편, 극점, 변곡점, 교점, 극한값만 있는 점) 정밀 추출기
-// 대상 함수 mode: 0 = f(x), 1 = f'(x), 2 = f''(x), 3 = f(x) - g(x)
-double eval_target_func(const ASTNode* f, const ASTNode* g, double x, int mode);
-
-// [a, b] 구간 내 이분법 (사잇값 정리 알고리즘 ver.) + 뉴턴-랩슨 하이브리드 정밀 근 탐색
-bool refine_root_hybrid(const ASTNode* f, const ASTNode* g, double a, double b, int mode, double* out_root);
-
-// 특징점 중복 등록 방지 및 구조체 조립 도우미
-void push_keypoint(
-    GraphKeyPoint* list, int* count, int max_count,
-    KeyPointType type, double x, double y
-);
-
-//사용자가 제공한 범위 내에 함수의 특징점이 있는지 확인하는 함수
-void check_direct_candidate(
-    const ASTNode* f_root, const ASTNode* g_root,
-    double x_cand, double x_min, double x_max,
-    GraphKeyPoint* out_points, int* count, int max_points
-);
 
 // 함수 최소 주기 탐색 (비주기면 NAN, out_label에 "None" 저장)
 double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
-// 주기 존재여부 확인 함수
-bool is_valid_period(const ASTNode* f, double p);
-
-// [내부 도우미] 찾은 주기 P를 정수 k(12 -> 2)로 나누어 최소 주기(기본 주기)로 축소
-double reduce_to_minimal_period(const ASTNode * f, double p);
 
 // 메인 특징점 추출 진입 함수
 int extract_graph_keypoints(
@@ -808,18 +682,6 @@ int sample_curve_adaptive(
 
 // 4. 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
 
-// 내부 도우미: 중복 점근선 병합 및 방정식 문자열 조립
-void push_asymptote_record(
-    GAsymp* list, int* count, int max_count,
-    ASType type, double val, int direction,
-    bool is_confirmed, double residual, const char* custom_eq
-);
-
-// [파트 A] 수직 점근선(x = a) 독립 추출기
-bool check_vertical_one_sided_divergence(const ASTNode* f, double c, int dir);
-// 유효 영역(valid_x)과 NaN/발산 영역(invalid_x) 사이 경계 정밀 이분 탐색
-double refine_vertical_asymptote_x(const ASTNode* f, double valid_x, double invalid_x);
-
 // 독립 API 1: 정의역 내 수직 점근선 추출
 int extract_vertical_asymptotes(
     const ASTNode* f_root,
@@ -845,9 +707,6 @@ bool verify_candidate_asymptote_expr(
     const char* cand_eq_str,
     GAsymp* out_record
 );
-
-// C 자체 보조 탐색: 원거리 코시 수렴 판정으로 자체 수평 점근선 후보 포착
-bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff);
 
 // [파트 C] 파이썬 전달용 통합 진입 함수 (독립 실행 메인 API)
 int extract_asymptote_equations(
