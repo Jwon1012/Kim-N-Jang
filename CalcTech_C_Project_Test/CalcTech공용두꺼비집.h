@@ -1,7 +1,9 @@
 ﻿#pragma once
 #define _USE_MATH_DEFINES
 #define CALCTECH_API __declspec(dllexport)
-//공통 표준 라이브러리 모음
+
+// 주의: 윈도우가 아닌 OS에서 개발시 오류가 발생할 수 있으므로 pragma region ~ endregion문을 제거해야함
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,8 +12,7 @@
 #include <complex.h>
 #include <stdbool.h>
 
-//======================================================
-// 공용 상수 & 매크로 파트
+#pragma region 공용 상수 & 매크로 
 
 #define DEFAULT_SAMPLE_COUNT 2000
 //수치 미분 전용 스텝 크기 (절단 오차와 반올림 오차의 최적 균형점)
@@ -48,11 +49,10 @@
 #define MAX_KEY_POINTS    128
 #define MIN_SAMPLE_COUNT  2000
 #define MAX_SAMPLE_COUNT  20000
-//======================================================
 
+#pragma endregion
 
-//======================================================
-//모듈 I: 수식 파싱 & AST 파트 (사용자가 입력한 수식을 컴퓨터가 분석 가능한 형태로 변환
+#pragma region 모듈 I: 수식 파싱 & AST 파트 (사용자가 입력한 수식을 컴퓨터가 분석 가능한 형태로 변환
 
 // 토큰의 종류 (숫자, 변수, 연산자, 괄호 등 분류)
 typedef enum {
@@ -139,12 +139,9 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
 CALCTECH_API ASTNode* calctech_parse_formula(const char* expr);
 CALCTECH_API void calctech_free_formula(ASTNode* root);
 CALCTECH_API int calctech_formula_to_latex(const char* expr, char* out_buf, int max_len);
-//======================================================
+#pragma endregion
 
-
-//======================================================
-// 모듈 II: 수치 해석 & 미적분 파트 
-
+#pragma region 모듈 II: 수치 해석 & 미적분 파트 
 // 특정 접점 t에서의 접선 정보 패키징
 typedef struct {
     double t;            // 접점의 x좌표
@@ -282,10 +279,6 @@ typedef struct {
  } OsculatingCircleInfo;
  typedef OsculatingCircleInfo OscCircle;
 
- //모듈II: 모듈I에서 생성한 수식의 그래프를 수학적으로 다루는 툴 모음집
-
-// IIA: C언어로 미분적분 구현하는 코드
-
 // [1] 사용자가 입력한 수식을 진짜로 계산하는 함수
  double eval_ast(const ASTNode* node, double x);
  // [2] 단일 점 수치 미분 (1계, 2계 중앙 차분법)
@@ -305,11 +298,9 @@ typedef struct {
      double* out_d2y, //버퍼 IV: 2계도함수 배열
      double* out_int_y); //버퍼 V: 누적 정적분 배열
 
- //IIB: 파생함수 10가지 구현하는 코드
-
  /*파생함수 I: 심프슨 the GOAT */
 
- //  IA: 곡선과 접선으로 둘러쌓인 넓이
+ /*곡선과 접선으로 둘러쌓인 넓이*/
  //  접선 정보 구조체 생성 및 접선의 방정식 계산: g_t(x) = f'(t)(x - t) + f(t)
  TangentInfo calc_tangent_info(const ASTNode* f, double t);
 
@@ -339,7 +330,7 @@ typedef struct {
      double* out_S
  );
 
- //파생함수 IB: 구간 누적 & 이동 적분
+ /*구간 누적& 이동 적분*/
 
  //g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
  void generate_def_integral_array(
@@ -355,7 +346,7 @@ typedef struct {
      double* out_g
  );
 
- //파생함수 IC: 특이함수 정적분& 이상적분
+ /* 특이함수 정적분 & 이상적분*/
  // 제2종: 점근선 같은 구간을 피한 이상적분
  double improper_integral_II(const ASTNode* f, double a, double b, int steps);
 
@@ -446,7 +437,7 @@ typedef struct {
      double* out_d2f
  );
 
- //파생함수 V: MVT의 기하적 구현
+ /*파생함수 V : MVT의 기하적 구현*/
 
  // 함수의 최대속도 찾는 라그랑주 MVT
  MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
@@ -460,10 +451,9 @@ typedef struct {
      int max_steps       // 최대 점프 횟수 (최대 127)
  );
 
+ /*파생함수 VI : 곡선의 길이*/
 
- //파생함수 VI: 곡선의 길이
  // 호의 길이 추적
-
  // [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
  void generate_arc_length_arrays(
      const ASTNode* f,
@@ -495,7 +485,7 @@ typedef struct {
      double* out_s       // 누적 이동 궤적 길이 s(t) = ∫_{t_min}^t v(u) du 배열
  );
 
- //파생함수 VII: 뉴턴-랩슨법으로 교점 탐색 & 접선 궤적 추적
+ /*파생함수 VII : 뉴턴 - 랩슨법으로 교점 탐색 & 접선 궤적 추적*/
  NewtonTrace trace_newton_raphson(
      const ASTNode* f,
      const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
@@ -503,7 +493,7 @@ typedef struct {
      int max_iter        // 최대 반복 횟수 (최대 63)
  );
 
- //파생함수 VIII: 테일러 급수로 초월함수 근사 (최대 14회) & 잔여 오차 추적
+ /*파생함수 VIII : 테일러 급수로 초월함수 근사(최대 14회)& 잔여 오차 추적*/
  TaylorResult generate_taylor_approx_arrays(
      const ASTNode* f,
      double a,           // 전개 기준점 x = a
@@ -516,8 +506,8 @@ typedef struct {
      double* out_error   // 잔여 오차 |R_n(x)| = |f(x) - P_n(x)| 배열
  );
 
- //파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
- // [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
+ /*파생함수IX: 역함수의 기하적 투영& 역함수 미분법 발동*/
+ // [PIP 파생함수] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
  // 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
  // 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
  int generate_inverse_curve_arrays(
@@ -532,10 +522,10 @@ typedef struct {
      double* out_inv_dy    // 역함수 도함수 배열 (= 1 / f'(x), PIP 서브캔버스용)
  );
 
- // [슬라이더 연동 IX-2] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
+ // [슬라이더 연동 IX] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
  IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
 
- // 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적
+ /* 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적*/
  // [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
  OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
 
@@ -549,12 +539,10 @@ typedef struct {
      double* out_curvature,  // 곡률 κ(x) 배열 (PIP 서브캔버스용)
      double* out_radius      // 곡률반지름 R(x) 배열 (변곡점 부근은 NAN)
  );
- //======================================================
- 
 
+#pragma endregion
 
- //======================================================
- // 모듈III: 축 스케일링 & 그래프 특징점 파트
+#pragma region 모듈III: 축 스케일링 & 그래프 특징점 파트
  //Python UI -> C DLL 동적 축 스케일링 입력 옵션
  typedef struct {
      int scale_target;       // SCALE_AUTO_UNION(0) ~ SCALE_FOLLOW_G(3)
@@ -649,8 +637,9 @@ typedef struct {
      int canvas_width_px,
      double* out_x, double* out_y, int max_samples
  );
-//======================================================
-// 점근선 검증 파트
+#pragma endregion
+
+#pragma region 점근선 검증 & 추출 파트
 
 /*모듈III: 위 모듈에서 얻은 점근선의 후보 검증*/
 //점근선의 방정식의 종류를 담은 빵틀
@@ -672,7 +661,6 @@ typedef enum {
      char equation[96];        // 파이썬 전달용 방정식 문자열 (예: "x = 0", "y = pi/2", "y = 2x - 1")
  } GraphAsymptote;
  typedef GraphAsymptote GAsymp;
-
 
  // 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
  // 독립 API 1: 정의역 내 수직 점근선 추출
@@ -728,11 +716,9 @@ typedef enum {
      GAsymp* out_asymptotes,                // [출력] 최종 확정/리포트 점근선 배열
      int max_asymptotes                     // 출력 버퍼 최대 크기
  );
+#pragma endregion
 
-
- //======================================================
- //모듈IV: C-Python 연결 패킹 모음
- 
+#pragma region 모듈IV: C - Python 연결 패킹 모음
 // 그래프 요약 송장 (Python 전달용 메타데이터)
  typedef struct {
      int valid_count;                    // 실제 버퍼에 채워진 유효 샘플 개수
@@ -763,4 +749,4 @@ typedef enum {
      double* out_sub_int,                // [출력] 서브 캔버스 누적 정적분 배열 (NULL 허용)
      DualCanvasMeta* out_meta            // [출력] 그래프 요약 송장 (필수)
  );
-//======================================================
+#pragma endregion

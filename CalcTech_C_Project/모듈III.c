@@ -1,6 +1,6 @@
 ﻿#include "CalcTech공용두꺼비집.h"
 
-// [모듈III_test.c 상단 내부 전용 전방 선언]
+#pragma region 은닉 함수 선언부
 static int compare_doubles(const void* a, const void* b);
 static bool get_valid_y_bounds(double* y_arr, int count, double x_range, double* out_low, double* out_high);
 static int gcd_int(int a, int b);
@@ -22,10 +22,11 @@ static bool evaluate_residual_convergence_dir(
     const ASTNode* f_root, const ASTNode* cand_g_root,
     int dir, double* out_final_residual, bool* out_is_converged);
 static bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff);
+#pragma endregion
 
 // [모듈 III] C-Python 파이프라인 연결 준비
 
-//1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
+#pragma region 동적 축 스케일링 & 수칙 적응형 샘플링 커널
 // 서브트리에 상수 'π '가 포함되어 있는지 확인 (예: sin(2*π *x) 판별용)
 bool ast_contains_pi(const ASTNode* node) 
 {
@@ -304,8 +305,9 @@ AScale compute_dynamic_axis_scale(
     return res;
 }
 
-//2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
+#pragma endregion
 
+#pragma region 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
 // 두 수의 최대공약수를 출력하는 함수 (for 기약분수화)
 static int gcd_int(int a, int b) {
     a = abs(a);
@@ -808,7 +810,9 @@ int extract_graph_keypoints(
     return count;
 }
 
-// 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
+#pragma endregion
+
+#pragma region 기존 모듈 개발시 나온 문제점 보완
 
 // [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
 double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole) {
@@ -884,7 +888,10 @@ int sample_curve_adaptive(
     return count;
 }
 
-// 4. 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
+#pragma endregion
+
+#pragma region 선발된 점근선의 방정식 최종 검증 및 전달
+
 // ※점근선의 수학적 정의: 곡선 위의 한 점이 정해진 직선에 한없이 가까워질때 두 대상 사이의 거리가 0에 수렴하는 기준 직선
 
 /* [점근선 추출 및 검증 파이프라인]
@@ -909,6 +916,7 @@ int sample_curve_adaptive(
      - 확정된 점근선([빵틀 25] GraphAsymptote)을 모듈 2(특이적분 구간 분할) 및
        모듈 3(파이썬 UI 렌더링 패킷)으로 최종 전달
  */
+
 // 내부 도우미: 중복 점근선 병합 및 방정식 문자열 조립
 static void push_asymptote_record(
     GAsymp* list, int* count, int max_count,
@@ -1266,3 +1274,5 @@ int extract_asymptote_equations(
 
     return total;
 }
+
+#pragma endregion

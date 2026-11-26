@@ -1,4 +1,6 @@
 ﻿#include "CalcTech공용두꺼비집.h"
+
+#pragma region 예약어 관리부
 // 예약어 관리 빵틀 (밀가루고 뭐고 없는 쇠통 빵틀)
 typedef struct {
     const char* name; //예약어 text
@@ -64,7 +66,9 @@ static const KeywordSpec* find_keyword(const char* text)
 
 // 2. 예약어 여부 검사 함수
 static int is_keyword(const char* str) { return find_keyword(str) != NULL; }
+#pragma endregion
 
+#pragma region 토큰 리스트 생성부
 // 토큰 리스트 메모리 초기화
 static void init_token_list(TokenList* list) {
     list->capacity = 16; //리스트 용량
@@ -91,32 +95,6 @@ static void add_token(TokenList* list, TokenType type, const char* text)
     strncpy_s(list->tokens[list->count].text, sizeof(list->tokens[list->count].text), text, 31);
     list->tokens[list->count].text[31] = '\0';
     list->count++;
-}
-
-// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
-static int get_op_precedence(const ASTNode* node) {
-    if (node == NULL || node->type != NODE_BINARY_OP) return 99; // 숫자, 변수, 함수는 괄호 불필요
-    if (strcmp(node->value, "=") == 0) return 0;
-    if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) return 1;
-    if (strcmp(node->value, "*") == 0 || strcmp(node->value, "/") == 0) return 2;
-    if (strcmp(node->value, "^") == 0) return 3;
-    return 99;
-}
-
-// [내부 도우미 함수] 버퍼 오버플로우를 막으면서 안전하게 문자열을 이어 붙이는 함수
-static void append_str(char* out_buf, size_t max_len, const char* str);
-
-// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
-static void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len) {
-    if (child == NULL) return;
-    int child_prec = get_op_precedence(child);
-    // 자식 우선순위가 낮거나, 우변인데 우선순위가 같은 경우(예: a - (b + c), (a^b)^c) 괄호 부여
-    bool need_paren = (child_prec < parent_prec) || (is_right_operand && child_prec == parent_prec);
-
-    if (need_paren) append_str(out_buf, max_len, "\\left(");
-    ast_to_latex(child, out_buf, max_len);
-    if (need_paren) append_str(out_buf, max_len, "\\right)");
-
 }
 
 // 4. [핵심] 문자열 수식을 토큰 리스트로 분리하는 1단계 Lexer 함수
@@ -220,6 +198,20 @@ void free_token_list(TokenList* list)
 {
     if (list->tokens != NULL) { free(list->tokens);list->tokens = NULL; }
     list->count = 0; list->capacity = 0;
+}
+
+#pragma endregion
+
+#pragma region AST생성부
+
+// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
+static int get_op_precedence(const ASTNode* node) {
+    if (node == NULL || node->type != NODE_BINARY_OP) return 99; // 숫자, 변수, 함수는 괄호 불필요
+    if (strcmp(node->value, "=") == 0) return 0;
+    if (strcmp(node->value, "+") == 0 || strcmp(node->value, "-") == 0) return 1;
+    if (strcmp(node->value, "*") == 0 || strcmp(node->value, "/") == 0) return 2;
+    if (strcmp(node->value, "^") == 0) return 3;
+    return 99;
 }
 
 // 노드 동적 생성 함수 (malloc)
@@ -556,12 +548,28 @@ void print_ast_tree(ASTNode* root)
         }
     }
 }
+#pragma endregion
+
+#pragma region LaTeX 코드 생성
 
 // [내부 도우미 함수] 버퍼 오버플로우를 막으면서 안전하게 문자열을 이어 붙이는 함수
+static void append_str(char* out_buf, size_t max_len, const char* str);
 static void append_str(char* buf, size_t max_len, const char* str) 
 {
     if (buf == NULL || str == NULL) return;
     strncat_s(buf, max_len, str, _TRUNCATE);
+}
+
+// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
+static void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len) {
+    if (child == NULL) return;
+    int child_prec = get_op_precedence(child);
+    // 자식 우선순위가 낮거나, 우변인데 우선순위가 같은 경우(예: a - (b + c), (a^b)^c) 괄호 부여
+    bool need_paren = (child_prec < parent_prec) || (is_right_operand && child_prec == parent_prec);
+
+    if (need_paren) append_str(out_buf, max_len, "\\left(");
+    ast_to_latex(child, out_buf, max_len);
+    if (need_paren) append_str(out_buf, max_len, "\\right)");
 }
 
 // ★ AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
@@ -733,3 +741,5 @@ void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len)
         return;
     }
 }
+
+#pragma endregion

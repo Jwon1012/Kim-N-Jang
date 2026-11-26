@@ -175,11 +175,13 @@
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈III_test.c" />
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈II_test.c" />
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈I_test.c" />
+    <ClCompile Include="..\CalcTech_C_Project_Test\main.c" />
     <ClCompile Include="CalcTech_C_Project.c" />
     <ClCompile Include="dllmain.c" />
+    <ClCompile Include="모듈I.c" />
+    <ClCompile Include="모듈II.c" />
+    <ClCompile Include="모듈III.c" />
+    <ClCompile Include="모듈IV.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -35,13 +35,19 @@
     <ClCompile Include="dllmain.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈I_test.c">
+    <ClCompile Include="모듈I.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈II_test.c">
+    <ClCompile Include="모듈III.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\CalcTech_C_Project_Test\모듈III_test.c">
+    <ClCompile Include="모듈IV.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈II.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\CalcTech_C_Project_Test\main.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
