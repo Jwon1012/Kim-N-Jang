@@ -1,6 +1,17 @@
 ﻿#pragma once
 #define _USE_MATH_DEFINES
 #define CALCTECH_API __declspec(dllexport)
+//공통 표준 라이브러리 모음
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <math.h>
+#include <complex.h>
+#include <stdbool.h>
+
+//======================================================
+// 공용 상수 & 매크로 파트
 
 #define DEFAULT_SAMPLE_COUNT 2000
 //수치 미분 전용 스텝 크기 (절단 오차와 반올림 오차의 최적 균형점)
@@ -37,19 +48,13 @@
 #define MAX_KEY_POINTS    128
 #define MIN_SAMPLE_COUNT  2000
 #define MAX_SAMPLE_COUNT  20000
-//공통 표준 라이브러리 모음
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <math.h>
-#include <complex.h>
-#include <stdbool.h>
-//모듈 I: 사용자가 입력한 수식을 컴퓨터가 인식 가능한 형태로 변환하는 모듈
+//======================================================
 
-// 빵틀 정의
-// [빵틀 1] 토큰의 종류 (숫자, 변수, 연산자, 괄호 등 분류)
 
+//======================================================
+//모듈 I: 수식 파싱 & AST 파트 (사용자가 입력한 수식을 컴퓨터가 분석 가능한 형태로 변환
+
+// 토큰의 종류 (숫자, 변수, 연산자, 괄호 등 분류)
 typedef enum {
     TOKEN_NUMBER,   //숫자 (2,3.14)
     TOKEN_VARIABLE,  //변수 (x,y,z)
@@ -62,20 +67,20 @@ typedef enum {
     TOKEN_UNKNOWN
 } TokenType;
 
-// [빵틀 2] 단일 토큰 정보 (토큰의 타입 + 실제 문자열 텍스트)
+// 단일 토큰 정보 (토큰의 타입 + 실제 문자열 텍스트)
 typedef struct {
     TokenType type; // 토큰 종류
     char text[32];  // 쪼개진 글자를 저장하는 버퍼 (최대 31자 + 널문자)
 } Token;
 
-// [빵틀 3] 토큰들을 담는 동적 배열 (토큰 리스트)
+// 토큰들을 담는 동적 배열 (토큰 리스트)
 typedef struct {
     Token* tokens;  // 토큰 배열의 시작 메모리 주소
     int count;      // 현재 저장된 토큰 개수
     int capacity;   // 동적으로 할당된 메모리 최대 용량
 } TokenList;
 
-// [빵틀 4] AST 노드 Type
+// AST 노드 Type
 typedef enum {
     NODE_NUMBER,    // 숫자 (예: 2, 1)
     NODE_VARIABLE,  // 일반변수 (x,y,z,...)
@@ -84,7 +89,7 @@ typedef enum {
     NODE_BINARY_OP  // 이항 연산자 (+, -, *, /, ^)
 } ASTNodeType;
 
-// [빵틀 6] AST 단일 노드 구조체
+// AST 단일 노드 구조체
 typedef struct ASTNode {
     ASTNodeType type;
     char value[32];          // 값 또는 연산자 텍스트 ("2", "x", "+", "/" 등)
@@ -94,13 +99,53 @@ typedef struct ASTNode {
     int arg_count; //실제 들어온 인자 개수
 } ASTNode;
 
-// [빵틀 6] 파서 위치 관리 구조체
+// 파서 위치 관리 구조체
 typedef struct {
     TokenList* list; // 1단계에서 쪼갠 토큰 리스트
     int current;     // 현재 읽고 있는 토큰 위치 (인덱스)
 } Parser;
 
-// [빵틀 7] 특정 접점 t에서의 접선 정보 패키징
+//외부 공개 함수
+//모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
+
+// ★ 입력받은 수식 문자열을 분석하여 토큰 리스트로 반환
+TokenList tokenize(const char* expr);
+
+// 토큰 리스트의 내용물을 [ '2', '*', 'x' ] 형태로 콘솔에 출력
+void print_tokens(const TokenList* list);
+
+// 사용이 끝난 토큰 리스트의 동적 할당 메모리 해제
+void free_token_list(TokenList* list);
+
+// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
+int get_op_precedence(const ASTNode* node);
+
+// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
+void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len);
+
+/* --- 노드 생성 / 해제 및 파서 도우미 선언-- */
+void free_ast(ASTNode* node);
+
+/* --- 재귀 강하 파싱 함수 선언-- - */
+ASTNode* parse_expression(Parser* p);
+
+/* --- 트리 시각화 출력 함수 선언-- */
+void print_ast_tree(ASTNode* root);
+
+// ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
+void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
+
+//파이썬 딸깍용 외부 공개 창구
+CALCTECH_API ASTNode* calctech_parse_formula(const char* expr);
+CALCTECH_API void calctech_free_formula(ASTNode* root);
+CALCTECH_API int calctech_formula_to_latex(const char* expr, char* out_buf, int max_len);
+//======================================================
+
+
+//======================================================
+// 모듈 II: 수치 해석 & 미적분 파트 
+
+// 특정 접점 t에서의 접선 정보 패키징
 typedef struct {
     double t;            // 접점의 x좌표
     double ft;           // 접점의 y좌표 f(t)
@@ -109,7 +154,7 @@ typedef struct {
     double y_intercept;  // 접선의 y절편
 } TangentInfo;
 
-// [빵틀 8] 분할된 개별 영역 정보 (파이썬 호버링 & 넓이 표시용)
+// 분할된 개별 영역 정보 (파이썬 호버링 & 넓이 표시용)
 typedef struct {
     int id;          // 영역 고유 번호 (0, 1, 2...)
     double a;        // 왼쪽 x 경계
@@ -120,13 +165,13 @@ typedef struct {
     int is_closed;   // 1이면 교점/축으로 완전히 닫힌 영역, 0이면 화면 끝(x_min/x_max)에 닿은 열린 영역
 } TangentRegion;
 
-// [빵틀 9] N축의 원리를 반영하여 얻은 실근을 담는 빵틀
+// N축의 원리를 반영하여 얻은 실근을 담는 빵틀
 typedef struct {
   double t_val; // 겉함수 y = f(t)의 실근좌표
   double x_val; // 속함수 g(x) = t의 실근좌표
 } CompositeRootPath;
 
-// [빵틀 10] 접선의 기울기를 계속 뽑아내는 빵틀
+// 접선의 기울기를 계속 뽑아내는 빵틀
  typedef struct {
      double t;          // 현재 기준 x좌표
      double ft;         // 원함수 높이 f(t)
@@ -139,7 +184,7 @@ typedef struct {
  //별명등록 ∵너무 길어..
  typedef CascadeDerivativePoint CDP;
 
-// [빵틀 11] 라그랑주 MVT 전용 빵틀
+// 라그랑주 MVT 전용 빵틀
  typedef struct {
      double a, b;            // 구간 양 끝점
      double fa, fb;          // 양 끝점 함숫값
@@ -152,7 +197,7 @@ typedef struct {
      double tan_y_ints[32];  // 각 c에서의 평행 접선 y절편 배열
  } MVTResult;
 
- // [빵틀 12] 코시 MVT 전용 빵틀
+ // 코시 MVT 전용 빵틀
  typedef struct {
      double a, b;            // 매개변수 t의 시작/끝 구간 [a, b]
      double ga, fa;          // 출발점 좌표 (g(a), f(a))
@@ -168,7 +213,7 @@ typedef struct {
  } CauchyMVTResult;
  typedef CauchyMVTResult Cauchy;
 
- // [빵틀 13] G.D. 전용 빵틀
+ // G.D. 전용 빵틀
  typedef struct {
      int step_count;          // 실제 이동한 총 스텝 수 (발산 시 조기 중단된 시점까지)
      int status;              // 0: 극소점 수렴 성공 | 1: 최대 스텝 도달(진동 중) | 2: 발산(폭주)
@@ -178,7 +223,7 @@ typedef struct {
      double secant_hist[128]; // 실제 점프한 구간 [x_n, x_{n+1}]의 평균변화율(할선 기울기)
  } GDTraceResult;
 
- // [빵틀 14] 곡선의 길이(호의 길이) 통합 분석 결과 빵틀
+ //곡선의 길이(호의 길이) 통합 분석 결과 빵틀
  typedef struct {
      double a, b;              // 구간 양 끝점
      double total_length;      // 전체 곡선 길이 L = ∫_a^b sqrt(1 + f'(x)^2) dx
@@ -190,7 +235,7 @@ typedef struct {
  } ArcLengthResult;
  typedef ArcLengthResult ALR;
 
- // [빵틀 15] 뉴턴-랩슨 전용 빵틀
+ //뉴턴-랩슨 전용 빵틀
  typedef struct {
      int iter_count;          // 실제 수행한 반복 횟수 (최대 63)
      int status;              // 0: 근 수렴 성공 | 1: 최대 반복 도달(진동/느린 수렴) | 2: 발산(접선 수평 f'(x)≈0 또는 폭주)
@@ -204,7 +249,7 @@ typedef struct {
  typedef NewtonTraceResult NewtonTrace;
 
 
- // [빵틀 17] 테일러 급수 근사 결과 빵틀 (최대 14차까지 확장)
+ // 테일러 급수 근사 결과 빵틀 (최대 14차까지 확장)
  typedef struct {
      double center_a;                       // 전개 기준점 a
      int degree;                            // 근사 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
@@ -213,7 +258,7 @@ typedef struct {
      double max_error;                      // 구간 내 최대 잔여 오차 max |f(x) - P_n(x)|
  } TaylorResult;
 
- // [빵틀 18] 역함수 투영 및 역함수 미분법 연동 결과 빵틀
+ //역함수 투영 및 역함수 미분법 연동 결과 빵틀
  typedef struct {
      int is_monotonic;        // 1: 구간 내 순증가/순감소 (역함수 단일 함수 존재) | 0: 극값 (도함수의 부호 변화)존재 
      int monotone_dir;        // 1: 순증가, -1: 순감소, 0: 비단조 (변곡점 존재 또는 상수함수)
@@ -226,7 +271,7 @@ typedef struct {
  } InverseDerivInfo;
  typedef InverseDerivInfo IDI;
 
- // [빵틀 19] 특정 접점 t에서의 곡률 및 접촉원(Osculating Circle) 정보 빵틀
+ // 특정 접점 t에서의 곡률 및 접촉원(Osculating Circle) 정보 빵틀
  typedef struct {
      double t;                // 기준 접점의 x좌표
      double ft;               // 기준 접점의 y좌표 f(t)
@@ -237,7 +282,280 @@ typedef struct {
  } OsculatingCircleInfo;
  typedef OsculatingCircleInfo OscCircle;
 
- // [빵틀 20] Python UI -> C DLL 동적 축 스케일링 입력 옵션
+ //모듈II: 모듈I에서 생성한 수식의 그래프를 수학적으로 다루는 툴 모음집
+
+// IIA: C언어로 미분적분 구현하는 코드
+
+// [1] 사용자가 입력한 수식을 진짜로 계산하는 함수
+ double eval_ast(const ASTNode* node, double x);
+ // [2] 단일 점 수치 미분 (1계, 2계 중앙 차분법)
+ double num_diff_1st(const ASTNode* root, double x);
+ double num_diff_2nd(const ASTNode* root, double x);
+ // [3] 단일 구간 정적분 (심프슨 1/3 법칙)
+ double num_integrate(const ASTNode* root, double a, double b, int steps);
+ // [4] 계산된 값을 2000개의 배열에다가 파바박 집어넣는 함수
+ void sample_calculus_arrays(
+     const ASTNode* root, //모듈I이 만든 수식 트리
+     double x_min, //x축 시작점
+     double x_max, //x축 끝점
+     int count, //샘플링 개수
+     double* out_x, //출력 버퍼 I: x좌표 arr
+     double* out_y, // 버퍼 II: x에 대한 함숫값 배열
+     double* out_dy, // 버퍼 III: 1계도함수 배열
+     double* out_d2y, //버퍼 IV: 2계도함수 배열
+     double* out_int_y); //버퍼 V: 누적 정적분 배열
+
+ //IIB: 파생함수 10가지 구현하는 코드
+
+ /*파생함수 I: 심프슨 the GOAT */
+
+ //  IA: 곡선과 접선으로 둘러쌓인 넓이
+ //  접선 정보 구조체 생성 및 접선의 방정식 계산: g_t(x) = f'(t)(x - t) + f(t)
+ TangentInfo calc_tangent_info(const ASTNode* f, double t);
+
+ //곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
+ double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
+
+ // 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
+ int partition_tangent_regions(
+     const ASTNode* f,
+     TangentInfo tan_info,
+     double x_min,
+     double x_max,
+     TangentRegion* out_regions,
+     int max_regions
+ );
+
+ //[★ PIP 파생함수] t 이동에 따른 선택 영역 넓이 변화 함수 S(t) 생성
+ void generate_tangent_area_S(
+     const ASTNode* f,
+     double t_min,
+     double t_max,
+     double x_min,
+     double x_max,
+     int target_region_id,
+     int count,
+     double* out_t,
+     double* out_S
+ );
+
+ //파생함수 IB: 구간 누적 & 이동 적분
+
+ //g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
+ void generate_def_integral_array(
+     const ASTNode* f,
+     double x_min,
+     double x_max,
+     int mode, //패턴 1(시작점 고정 a~x), 패턴 2(구간 이동 x~x+h), 패턴 3(대칭 구간 a-x~a+x), 
+     //위아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
+     double param, //패턴 1, 3에서는 기준점 'a', 패턴 2에서는 구간 폭 'h'
+     int is_abs, //0이면 순수 정적분(부호 유지), 1이면 기하학적 넓이(| f(t) | )
+     int count,
+     double* out_x,
+     double* out_g
+ );
+
+ //파생함수 IC: 특이함수 정적분& 이상적분
+ // 제2종: 점근선 같은 구간을 피한 이상적분
+ double improper_integral_II(const ASTNode* f, double a, double b, int steps);
+
+ // 제1종: a~x를 정적분한 후 a를 극한으로 보내는 적분
+ // - 변수 치환 x = a + u / (1 - u) 를 통해 [a, ∞) 구간을 유한 구간 [0, 1)로 압축하여 적분
+ double improper_integral_I(const ASTNode* f, double a, int steps);
+
+ //또 심프슨 법칙이야. 우린 숭배해야만해
+ void generate_func_bounds_integral_array(
+     const ASTNode* f,
+     const ASTNode* alpha, // 아래끝 함수 α(x)
+     const ASTNode* beta,  // 위끝 함수 β(x)
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,
+     double* out_g
+ );
+
+ /*파생함수 II : 접점 t 이동에 따른 접선의 절편 & 축 삼각형 넓이 변화*/
+ void generate_tangent_intercepts_array(
+     const ASTNode* f,
+     double t_min,
+     double t_max,
+     int count,
+     double* out_t,
+     double* out_x_int, //접선의 x절편 X(t) = t - f(t) / f'(t) 배열 (수평 접선 구간은 NAN)
+     double* out_y_int, //접선의 y절편 Y(t) = f(t) - t*f'(t) 배열
+     double* out_tri_area //접선과 x축, y축이 이루는 직각삼각형 넓이 0.5 * |X(t) * Y(t)| 배열
+ );
+
+ /*파생함수 III: 합성함수*/
+
+ //N축 기반 합성함수 개형 추론
+ void generate_composite_n_axis_arrays(
+     const ASTNode* f, // 겉함수 f(t)
+     const ASTNode* g, // 속함수 g(x)
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x, //out_x   : 입력 정의역 x 배열
+     double* out_t, //out_t   : 속함수 치역 t = g(x) 배열 (N축 공유 축 좌표)
+     double* out_fog //out_fog : 최종 합성함수 y = f(g(x)) 배열 (PIP 캔버스용)
+ );
+
+ //합성 방정식의 실근 역추적 & 합성 부등식의 범위 스캐닝
+
+ //  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
+ //  반환값: 찾아낸 전체 실근 x의 총개수
+ int solve_composite_equation_n_axis(
+     const ASTNode* f, // 겉함수 f(t)
+     const ASTNode* g, // 속함수 g(x)
+     double k,         // 우변 상수 k (f(g(x)) = k)
+     double t_min,
+     double t_max,
+     double x_min,
+     double x_max,
+     CompositeRootPath* out_paths,
+     int max_paths
+ );
+
+ // 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
+ // 마스크: 조건을 만족시키는 칸은 1(통과), 그렇지 않은 칸은 0(빠꾸)로 분류하는 채점표 배열
+ void scan_composite_inequality(
+     const ASTNode* f,
+     const ASTNode* g,
+     double k,
+     int op_type, //0 (> ), 1 (>= ), 2 (< ), 3 (<= )
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,
+     int* out_mask // out_mask[i]: 부등식을 만족하면 1, 아니면 0 (파이썬에서 x축 형광 하이라이트용)
+ );
+
+ /*파생함수 IV: 원함수 -> 도함수 -> 이계도함수 서브캔버스 연동*/
+ // 슬라이더 이동 시 현재 위치 t에서의 [원함수 접선] & [도함수 접선] 정보 일괄 추출
+ CDP calc_cascade_derivative_at(const ASTNode* f, double t);
+
+ // PIP 1(f') 및 PIP 2(f'') 배경 곡선 배열 생성
+ void generate_cascade_derivative_arrays(
+     const ASTNode* f,
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,
+     double* out_df,
+     double* out_d2f
+ );
+
+ //파생함수 V: MVT의 기하적 구현
+
+ // 함수의 최대속도 찾는 라그랑주 MVT
+ MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
+ // 두 함수의 변화율을 비유하는 코시 MVT, 극한 넣으면 로피탈 정리 뚝딱
+ Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b);
+ // 안개가 자욱한 야산에서 안전하게 하산하려는 G.D.
+ GDTraceResult trace_gradient_descent(
+     const ASTNode* f,
+     double x0,          // 공을 떨어뜨릴 초기 위치
+     double lr,          // 학습률 eta (보폭 크기)
+     int max_steps       // 최대 점프 횟수 (최대 127)
+ );
+
+
+ //파생함수 VI: 곡선의 길이
+ // 호의 길이 추적
+
+ // [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
+ void generate_arc_length_arrays(
+     const ASTNode* f,
+     double a,           // 길이 측정 시작 기준점 x = a
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,      // 가로축 x좌표 배열
+     double* out_s,      // 누적 곡선 길이 s(x) 배열
+     double* out_chord   // 시작점 (a, f(a))와 현재 점 (x, f(x)) 사이의 직선 거리 배열
+ );
+
+ //곡선의 길이를 N등분하는 좌표 추출 및 굴곡도(Tortuosity) 분석
+ ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
+
+ // 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
+
+ // [PIP 파생함수] 매개변수 t에 따른 궤적 좌표 (x(t), y(t)), 순간 속력 v(t), 누적 이동 거리 s(t) 생성
+ void generate_param_arc_arrays(
+     const ASTNode* f,   // y(t) 수식 트리
+     const ASTNode* g,   // x(t) 수식 트리
+     double t_min,
+     double t_max,
+     int count,
+     double* out_t,      // 매개변수 t 배열
+     double* out_x,      // 궤적 x(t) = g(t) 배열
+     double* out_y,      // 궤적 y(t) = f(t) 배열
+     double* out_speed,  // 순간 속력 v(t) = sqrt(g'(t)^2 + f'(t)^2) 배열
+     double* out_s       // 누적 이동 궤적 길이 s(t) = ∫_{t_min}^t v(u) du 배열
+ );
+
+ //파생함수 VII: 뉴턴-랩슨법으로 교점 탐색 & 접선 궤적 추적
+ NewtonTrace trace_newton_raphson(
+     const ASTNode* f,
+     const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
+     double x0,          // 사용자가 슬라이더로 지정하는 초기 추정값
+     int max_iter        // 최대 반복 횟수 (최대 63)
+ );
+
+ //파생함수 VIII: 테일러 급수로 초월함수 근사 (최대 14회) & 잔여 오차 추적
+ TaylorResult generate_taylor_approx_arrays(
+     const ASTNode* f,
+     double a,           // 전개 기준점 x = a
+     int degree,         // 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,      // 가로축 x좌표 배열
+     double* out_poly,   // n차 테일러 다항식 P_n(x) 배열
+     double* out_error   // 잔여 오차 |R_n(x)| = |f(x) - P_n(x)| 배열
+ );
+
+ //파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
+ // [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
+ // 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
+ // 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
+ int generate_inverse_curve_arrays(
+     const ASTNode* f,
+     double x_min,
+     double x_max,
+     int count,
+     double* out_orig_x,   // 원함수 x좌표 배열
+     double* out_orig_y,   // 원함수 y = f(x) 배열
+     double* out_inv_x,    // 역함수 x좌표 배열 (= f(x))
+     double* out_inv_y,    // 역함수 y좌표 배열 (= x)
+     double* out_inv_dy    // 역함수 도함수 배열 (= 1 / f'(x), PIP 서브캔버스용)
+ );
+
+ // [슬라이더 연동 IX-2] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
+ IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
+
+ // 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적
+ // [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
+ OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
+
+ // [PIP 파생함수 X-2] 구간 전체에 대한 곡률 함수 κ(x) 및 곡률반지름 R(x) 배열 생성
+ void generate_curvature_array(
+     const ASTNode* f,
+     double x_min,
+     double x_max,
+     int count,
+     double* out_x,          // 가로축 x좌표 배열
+     double* out_curvature,  // 곡률 κ(x) 배열 (PIP 서브캔버스용)
+     double* out_radius      // 곡률반지름 R(x) 배열 (변곡점 부근은 NAN)
+ );
+ //======================================================
+ 
+
+
+ //======================================================
+ // 모듈III: 축 스케일링 & 그래프 특징점 파트
+ //Python UI -> C DLL 동적 축 스케일링 입력 옵션
  typedef struct {
      int scale_target;       // SCALE_AUTO_UNION(0) ~ SCALE_FOLLOW_G(3)
      int x_unit_mode;        // X_UNIT_AUTO(0), X_UNIT_DECIMAL(1), X_UNIT_PI(2)
@@ -245,7 +563,7 @@ typedef struct {
      int target_ticks;       // 희망 눈금 칸 수 (기본값: 8 ~ 10)
  } ScaleOption;
 
- // [빵틀 21] 동적 축 스케일링 산출 결과 (격자 & 라벨 포맷팅 기준)
+ // 동적 축 스케일링 산출 결과 (격자 & 라벨 포맷팅 기준)
  typedef struct {
      double x_min, x_max;    // 동기화된 최종 X축 범위
      double y_min, y_max;    // 점근선 제거 + 원점 포함 + 15% 여백이 반영된 최종 Y축 범위
@@ -256,7 +574,7 @@ typedef struct {
  } AxisScaleResult;
  typedef AxisScaleResult AScale;
 
- // [빵틀 22] 그래프 위 마커·빈 동그라미·점선 라벨 표시용 특징점 구조체
+ //그래프 위 마커·빈 동그라미·점선 라벨 표시용 특징점 구조체
  typedef enum {
      KP_X_INTERCEPT = 0,  // X절편 (f(x) = 0)
      KP_Y_INTERCEPT = 1,  // Y절편 (x = 0)
@@ -276,33 +594,67 @@ typedef struct {
  } GraphKeyPoint;
  typedef GraphKeyPoint KeyPoint;
 
- // [빵틀 23] C DLL -> Python(ctypes) 통합 렌더링 데이터 패키지
- typedef struct {
-     int sample_count;       // 화면 해상도에 맞춰 동적으로 할당된 실제 샘플 수 N
-     double dx;              // 현재 샘플링 간격 (x_max - x_min) / (sample_count - 1)
-     AScale axis;         // 확정된 축 범위 및 Nice-Step 정보 ([빵틀 21])
+ //1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
+ // 서브트리에 상수 'pi'가 포함되어 있는지 확인 (예: sin(2*pi*x) 판별용)
+ bool ast_contains_pi(const ASTNode* node);
 
-     // 주함수 f(x) 동적 할당 좌표 버퍼 (곡선을 그리기 위핸 기본 도화지 데이터)
-     double* x_arr;
-     double* y_arr;
-     double* dy_arr;
-     double* d2y_arr;
-     double* int_y_arr;
+ // 서브트리에 변수 'x' 외에 비선형 연산(exp, ln, 2차 이상 거듭제곱 등)이 있는지 확인
+ bool ast_is_nonlinear_arg(const ASTNode* node);
 
-     // 보조함수 g(x) 동적 할당 좌표 버퍼 (g가 NULL이면 미사용)
-     double* g_y_arr;
+ // AST 전체를 분석해 X축에 π 라디안 눈금을 쓸지(1) 일반 10진 눈금을 쓸지(0) 판별
+ int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
+ int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
 
-     // 추출된 특징점(절편, 극점, 구멍, 교점) 배열
-     int keypoint_count;
-     KeyPoint keypoints[MAX_KEY_POINTS];
+ // Nice-Step 눈금 간격 계산기 (10진 및 π 라디안)
+ double calc_nice_step(double range, int target_ticks);
+ double calc_pi_nice_step(double range, int target_ticks);
 
-     // 함수 주기 정보 (비주기 함수면 period = NAN, period_label = "None")
-     double period;
-     char period_label[32];
- } ViewportPackage;
+ // 동적 축 스케일링 메인 통합 함수 (AScale 산출)
+ AScale compute_dynamic_axis_scale(
+     const ASTNode* f_root, const ASTNode* g_root,
+     double x_min, double x_max,
+     double* y_f, double* y_g, int sample_count,
+     const ScaleOption* opt
+ );
 
- //[빵틀 24] 점근선의 방정식의 종류를 담은 빵틀
- typedef enum {
+ //2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
+
+ // 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
+ void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
+
+
+ // 함수 최소 주기 탐색 (비주기면 NAN, out_label에 "None" 저장)
+ double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
+
+ // 메인 특징점 추출 진입 함수
+ int extract_graph_keypoints(
+     const ASTNode* f_root, const ASTNode* g_root,
+     double x_min, double x_max,
+     GraphKeyPoint* out_points, int max_points
+ );
+
+ // 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
+
+ // [해결책 3] 고계 미분 및 테일러 급수 근사 시 부동소수점 오차 누적 억제
+ double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
+
+ // [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
+ double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
+
+ // [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
+ // 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
+ int sample_curve_adaptive(
+     const ASTNode* f_root,
+     double x_min, double x_max,
+     int canvas_width_px,
+     double* out_x, double* out_y, int max_samples
+ );
+//======================================================
+// 점근선 검증 파트
+
+/*모듈III: 위 모듈에서 얻은 점근선의 후보 검증*/
+//점근선의 방정식의 종류를 담은 빵틀
+typedef enum {
      ASYMP_VERTICAL = 0,       // 수직 점근선: x = a
      ASYMP_HORIZONTAL = 1,     // 수평 점근선: y = b
      ASYMP_OBLIQUE = 2,        // 사선 점근선: y = mx + n
@@ -310,7 +662,7 @@ typedef struct {
  } AsymptoteType;
  typedef AsymptoteType ASType;
 
- //[빵틀 25] 수직·수평·사선·곡선 점근선 통합 정보 및 잔차 검증 결과를 담은 빵틀 (파이썬 전달용)
+ //수직·수평·사선·곡선 점근선 통합 정보 및 잔차 검증 결과를 담은 빵틀 (파이썬 전달용)
  typedef struct {
      AsymptoteType type;       // 점근선 유형
      double value;             // 수직(x = value) 또는 수평(y = value) 기준 상수 (사선/곡선은 NAN)
@@ -321,420 +673,94 @@ typedef struct {
  } GraphAsymptote;
  typedef GraphAsymptote GAsymp;
 
-//외부 공개 함수
-//모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
 
-// ★ 입력받은 수식 문자열을 분석하여 토큰 리스트로 반환
-TokenList tokenize(const char* expr);
-
-// 토큰 리스트의 내용물을 [ '2', '*', 'x' ] 형태로 콘솔에 출력
-void print_tokens(const TokenList* list);
-
-// 사용이 끝난 토큰 리스트의 동적 할당 메모리 해제
-void free_token_list(TokenList* list);
-
-// 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
-int get_op_precedence(const ASTNode* node);
-// 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
-void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len);
-
-/* --- 노드 생성 / 해제 및 파서 도우미 선언-- */
-void free_ast(ASTNode* node);
-
-/* --- 재귀 강하 파싱 함수 선언-- - */
-ASTNode* parse_expression(Parser* p);
-
-/* --- 트리 시각화 출력 함수 선언-- */
-void print_ast_tree(ASTNode* root);
-
-// ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
-void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
-
-//모듈II: 모듈I에서 생성한 수식의 그래프를 수학적으로 다루는 툴 모음집
-
-// IIA: C언어로 미분적분 구현하는 코드
-
-// [1] 사용자가 입력한 수식을 진짜로 계산하는 함수
-double eval_ast(const ASTNode* node, double x);
-// [2] 단일 점 수치 미분 (1계, 2계 중앙 차분법)
-double num_diff_1st(const ASTNode* root, double x);
-double num_diff_2nd(const ASTNode* root, double x);
-// [3] 단일 구간 정적분 (심프슨 1/3 법칙)
-double num_integrate(const ASTNode* root, double a, double b, int steps);
-// [4] 계산된 값을 2000개의 배열에다가 파바박 집어넣는 함수
-void sample_calculus_arrays(
-    const ASTNode* root, //모듈I이 만든 수식 트리
-    double x_min, //x축 시작점
-    double x_max, //x축 끝점
-    int count, //샘플링 개수
-    double* out_x, //출력 버퍼 I: x좌표 arr
-    double* out_y, // 버퍼 II: x에 대한 함숫값 배열
-    double* out_dy, // 버퍼 III: 1계도함수 배열
-    double* out_d2y, //버퍼 IV: 2계도함수 배열
-    double* out_int_y); //버퍼 V: 누적 정적분 배열
-
-//IIB: 파생함수 10가지 구현하는 코드
-
-/*파생함수 I: 심프슨 the GOAT */
-
-//  IA: 곡선과 접선으로 둘러쌓인 넓이
-//  접선 정보 구조체 생성 및 접선의 방정식 계산: g_t(x) = f'(t)(x - t) + f(t)
-TangentInfo calc_tangent_info(const ASTNode* f, double t);
-
-//곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
-double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
-
-// 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
-int partition_tangent_regions(
-    const ASTNode* f,
-    TangentInfo tan_info,
-    double x_min,
-    double x_max,
-    TangentRegion* out_regions,
-    int max_regions
-);
-
-//[★ PIP 파생함수] t 이동에 따른 선택 영역 넓이 변화 함수 S(t) 생성
-void generate_tangent_area_S(
-    const ASTNode* f,
-    double t_min,
-    double t_max,
-    double x_min,
-    double x_max,
-    int target_region_id,
-    int count,
-    double* out_t,
-    double* out_S
-);
-
-//파생함수 IB: 구간 누적 & 이동 적분
-
-//g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
-void generate_def_integral_array(
-    const ASTNode* f,
-    double x_min,
-    double x_max,
-    int mode, //패턴 1(시작점 고정 a~x), 패턴 2(구간 이동 x~x+h), 패턴 3(대칭 구간 a-x~a+x), 
-    //위아래끝이 또다른 함수의 경우는 IC에서 다룰 예정
-    double param, //패턴 1, 3에서는 기준점 'a', 패턴 2에서는 구간 폭 'h'
-    int is_abs, //0이면 순수 정적분(부호 유지), 1이면 기하학적 넓이(| f(t) | )
-    int count,
-    double* out_x,
-    double* out_g
-);
-
-//파생함수 IC: 특이함수 정적분& 이상적분
-// 제2종: 점근선 같은 구간을 피한 이상적분
-  double improper_integral_II(const ASTNode* f, double a, double b, int steps);
-
-// 제1종: a~x를 정적분한 후 a를 극한으로 보내는 적분
-// - 변수 치환 x = a + u / (1 - u) 를 통해 [a, ∞) 구간을 유한 구간 [0, 1)로 압축하여 적분
-double improper_integral_I(const ASTNode* f, double a, int steps);
-
-//또 심프슨 법칙이야. 우린 숭배해야만해
-void generate_func_bounds_integral_array(
-    const ASTNode* f,
-    const ASTNode* alpha, // 아래끝 함수 α(x)
-    const ASTNode* beta,  // 위끝 함수 β(x)
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,
-    double* out_g
-);
-
-/*파생함수 II : 접점 t 이동에 따른 접선의 절편 & 축 삼각형 넓이 변화*/
-void generate_tangent_intercepts_array(
-    const ASTNode* f,
-    double t_min,
-    double t_max,
-    int count,
-    double* out_t,
-    double* out_x_int, //접선의 x절편 X(t) = t - f(t) / f'(t) 배열 (수평 접선 구간은 NAN)
-    double* out_y_int, //접선의 y절편 Y(t) = f(t) - t*f'(t) 배열
-    double* out_tri_area //접선과 x축, y축이 이루는 직각삼각형 넓이 0.5 * |X(t) * Y(t)| 배열
-);
-
-/*파생함수 III: 합성함수*/
-
-//N축 기반 합성함수 개형 추론
-void generate_composite_n_axis_arrays(
-    const ASTNode* f, // 겉함수 f(t)
-    const ASTNode* g, // 속함수 g(x)
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x, //out_x   : 입력 정의역 x 배열
-    double* out_t, //out_t   : 속함수 치역 t = g(x) 배열 (N축 공유 축 좌표)
-    double* out_fog //out_fog : 최종 합성함수 y = f(g(x)) 배열 (PIP 캔버스용)
-);
-
-//합성 방정식의 실근 역추적 & 합성 부등식의 범위 스캐닝
-
-//  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
-//  반환값: 찾아낸 전체 실근 x의 총개수
- int solve_composite_equation_n_axis(
-     const ASTNode* f, // 겉함수 f(t)
-     const ASTNode* g, // 속함수 g(x)
-     double k,         // 우변 상수 k (f(g(x)) = k)
-     double t_min,
-     double t_max,
-     double x_min,
-     double x_max,
-     CompositeRootPath* out_paths,
-     int max_paths
+ // 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
+ // 독립 API 1: 정의역 내 수직 점근선 추출
+ int extract_vertical_asymptotes(
+     const ASTNode* f_root,
+     double x_min, double x_max,
+     int canvas_width_px,
+     GAsymp* out_list, int max_count
  );
 
-// 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
-// 마스크: 조건을 만족시키는 칸은 1(통과), 그렇지 않은 칸은 0(빠꾸)로 분류하는 채점표 배열
-void scan_composite_inequality(
-    const ASTNode* f,
-    const ASTNode* g,
-    double k,
-    int op_type, //0 (> ), 1 (>= ), 2 (< ), 3 (<= )
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,
-    int* out_mask // out_mask[i]: 부등식을 만족하면 1, 아니면 0 (파이썬에서 x축 형광 하이라이트용)
-);
+ // [파트 B] 비수직 점근선(수평·사선·곡선) 잔차 r(x) = |f(x) - g(x)| 검증기
+ bool evaluate_residual_convergence_dir(
+     const ASTNode* f_root,
+     const ASTNode* cand_g_root,
+     int dir,
+     double* out_final_residual,
+     bool* out_is_converged
+ );
 
-/*파생함수 IV: 원함수 -> 도함수 -> 이계도함수 서브캔버스 연동*/
-// [내부 도우미] 2계 도함수 f''(x) 수치 계산 (중심차분)
-double num_diff_2nd(const ASTNode* f, double x);
+ // 독립 API 2: 파이썬/모듈4가 넘긴 후보 식(cand_g_root)을 잔차 r(x)로 검증
+ bool verify_candidate_asymptote_expr(
+     const ASTNode* f_root,
+     const ASTNode* cand_g_root,
+     ASType cand_type,
+     const char* cand_eq_str,
+     GAsymp* out_record
+ );
 
-// 슬라이더 이동 시 현재 위치 t에서의 [원함수 접선] & [도함수 접선] 정보 일괄 추출
-CDP calc_cascade_derivative_at(const ASTNode* f, double t);
+ // [파트 C] 파이썬 전달용 통합 진입 함수 (독립 실행 메인 API)
+ int extract_asymptote_equations(
+     const ASTNode* f_root,
+     double x_min, double x_max,
+     int canvas_width_px,
+     const ASTNode* const* cand_g_roots, // 파이썬/모듈4 제안 후보 AST 배열 (없으면 NULL)
+     const ASType* cand_types,    // 각 후보의 점근선 타입 배열 (없으면 NULL)
+     const char* const* cand_eq_strs,    // 각 후보의 문자열 배열 (없으면 NULL)
+     int num_candidates,                 // 후보 개수 (0 가능)
+     GAsymp* out_asymptotes,
+     int max_asymptotes
+ );
 
-// PIP 1(f') 및 PIP 2(f'') 배경 곡선 배열 생성
-void generate_cascade_derivative_arrays(
-    const ASTNode* f,
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,
-    double* out_df,
-    double* out_d2f
-);
-
-//파생함수 V: MVT의 기하적 구현
-
-// 함수의 최대속도 찾는 라그랑주 MVT
-MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
-// 두 함수의 변화율을 비유하는 코시 MVT, 극한 넣으면 로피탈 정리 뚝딱
-Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b);
-// 안개가 자욱한 야산에서 안전하게 하산하려는 G.D.
-GDTraceResult trace_gradient_descent(
-    const ASTNode* f,
-    double x0,          // 공을 떨어뜨릴 초기 위치
-    double lr,          // 학습률 eta (보폭 크기)
-    int max_steps       // 최대 점프 횟수 (최대 127)
-);
-
-
-//파생함수 VI: 곡선의 길이
-// 호의 길이 추적
-
-// [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
-void generate_arc_length_arrays(
-    const ASTNode* f,
-    double a,           // 길이 측정 시작 기준점 x = a
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,      // 가로축 x좌표 배열
-    double* out_s,      // 누적 곡선 길이 s(x) 배열
-    double* out_chord   // 시작점 (a, f(a))와 현재 점 (x, f(x)) 사이의 직선 거리 배열
-);
-
-//곡선의 길이를 N등분하는 좌표 추출 및 굴곡도(Tortuosity) 분석
-ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
-
-// 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
-
-// [PIP 파생함수] 매개변수 t에 따른 궤적 좌표 (x(t), y(t)), 순간 속력 v(t), 누적 이동 거리 s(t) 생성
-void generate_param_arc_arrays(
-    const ASTNode* f,   // y(t) 수식 트리
-    const ASTNode* g,   // x(t) 수식 트리
-    double t_min,
-    double t_max,
-    int count,
-    double* out_t,      // 매개변수 t 배열
-    double* out_x,      // 궤적 x(t) = g(t) 배열
-    double* out_y,      // 궤적 y(t) = f(t) 배열
-    double* out_speed,  // 순간 속력 v(t) = sqrt(g'(t)^2 + f'(t)^2) 배열
-    double* out_s       // 누적 이동 궤적 길이 s(t) = ∫_{t_min}^t v(u) du 배열
-);
-
-//파생함수 VII: 뉴턴-랩슨법으로 교점 탐색 & 접선 궤적 추적
-NewtonTrace trace_newton_raphson(
-    const ASTNode* f,
-    const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
-    double x0,          // 사용자가 슬라이더로 지정하는 초기 추정값
-    int max_iter        // 최대 반복 횟수 (최대 63)
-);
-
-//파생함수 VIII: 테일러 급수로 초월함수 근사 (최대 14회) & 잔여 오차 추적
-TaylorResult generate_taylor_approx_arrays(
-    const ASTNode* f,
-    double a,           // 전개 기준점 x = a
-    int degree,         // 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,      // 가로축 x좌표 배열
-    double* out_poly,   // n차 테일러 다항식 P_n(x) 배열
-    double* out_error   // 잔여 오차 |R_n(x)| = |f(x) - P_n(x)| 배열
-);
-
-//파생함수IX: 역함수의 기하적 투영 & 역함수 미분법 발동
-// [PIP 파생함수 IX-1] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
-// 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
-// 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
-int generate_inverse_curve_arrays(
-    const ASTNode* f,
-    double x_min,
-    double x_max,
-    int count,
-    double* out_orig_x,   // 원함수 x좌표 배열
-    double* out_orig_y,   // 원함수 y = f(x) 배열
-    double* out_inv_x,    // 역함수 x좌표 배열 (= f(x))
-    double* out_inv_y,    // 역함수 y좌표 배열 (= x)
-    double* out_inv_dy    // 역함수 도함수 배열 (= 1 / f'(x), PIP 서브캔버스용)
-);
-
-// [슬라이더 연동 IX-2] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
-IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
-
-// 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적
-// [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
-OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
-
-// [PIP 파생함수 X-2] 구간 전체에 대한 곡률 함수 κ(x) 및 곡률반지름 R(x) 배열 생성
-void generate_curvature_array(
-    const ASTNode* f,
-    double x_min,
-    double x_max,
-    int count,
-    double* out_x,          // 가로축 x좌표 배열
-    double* out_curvature,  // 곡률 κ(x) 배열 (PIP 서브캔버스용)
-    double* out_radius      // 곡률반지름 R(x) 배열 (변곡점 부근은 NAN)
-);
-
-//모듈III: 입력한 함수의 정보를 추출하기
-
-//1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
-
-// 서브트리에 상수 'pi'가 포함되어 있는지 확인 (예: sin(2*pi*x) 판별용)
-bool ast_contains_pi(const ASTNode* node);
-
-// 서브트리에 변수 'x' 외에 비선형 연산(exp, ln, 2차 이상 거듭제곱 등)이 있는지 확인
-bool ast_is_nonlinear_arg(const ASTNode* node);
-
-// AST 전체를 분석해 X축에 π 라디안 눈금을 쓸지(1) 일반 10진 눈금을 쓸지(0) 판별
-int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
-int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
-
-// Nice-Step 눈금 간격 계산기 (10진 및 π 라디안)
-double calc_nice_step(double range, int target_ticks);
-double calc_pi_nice_step(double range, int target_ticks);
-
-// 동적 축 스케일링 메인 통합 함수 (AScale 산출)
-AScale compute_dynamic_axis_scale(
-    const ASTNode* f_root, const ASTNode* g_root,
-    double x_min, double x_max,
-    double* y_f, double* y_g, int sample_count,
-    const ScaleOption* opt
-);
-
-//2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
-
-// 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
-void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
+ /*모듈IV: 분수함수에서의 점근선 검토 및 추가 점근선 후보 선발*/
+ CALCTECH_API int calctech_analyze_asymptotes(
+     const ASTNode* f_root,                 // 주함수 f(x) AST
+     double x_min,                          // 현재 뷰포트 X 시작점
+     double x_max,                          // 현재 뷰포트 X 끝점
+     int canvas_width_px,                   // 캔버스 가로 픽셀 수
+     const double* cand_vert_xs,            // [모듈V 1차 후보] 분모=0 수직 점근선 후보 x 배열 (없으면 NULL)
+     int num_vert_cands,                    // 수직 후보 개수
+     const char* const* cand_rhs_exprs,     // [모듈V 1차 후보] 비수직 점근선 우변 식 배열 (예: "2*x - 1", 없으면 NULL)
+     const ASType* cand_types,              // 각 비수직 후보의 점근선 종류 배열 (없으면 NULL)
+     int num_nonvert_cands,                 // 비수직 후보 개수
+     GAsymp* out_asymptotes,                // [출력] 최종 확정/리포트 점근선 배열
+     int max_asymptotes                     // 출력 버퍼 최대 크기
+ );
 
 
-// 함수 최소 주기 탐색 (비주기면 NAN, out_label에 "None" 저장)
-double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
+ //======================================================
+ //모듈IV: C-Python 연결 패킹 모음
+ 
+// 그래프 요약 송장 (Python 전달용 메타데이터)
+ typedef struct {
+     int valid_count;                    // 실제 버퍼에 채워진 유효 샘플 개수
+     double dx;                          // 샘플링 간격 (x_max - x_min) / (valid_count - 1)
+     AScale main_axis;                   // 메인 캔버스(f, g) 축 범위 & Nice-Step
+     AScale sub_axis;                    // 서브 캔버스(f', f'', 적분) 축 범위 & Nice-Step
+     int keypoint_count;                 // 추출된 일반 특징점 개수
+     KeyPoint keypoints[MAX_KEY_POINTS]; // 절편, 극점, 변곡점, 교점, 구멍
+     double period;                      // 최소 주기 (비주기면 NAN)
+     char period_label[32];              // 주기 기호 문자열 (예: "2pi", "None")
+ } DualCanvasMeta;
+ typedef DualCanvasMeta DCM;
 
-// 메인 특징점 추출 진입 함수
-int extract_graph_keypoints(
-    const ASTNode* f_root, const ASTNode* g_root,
-    double x_min, double x_max,
-    GraphKeyPoint* out_points, int max_points
-);
-
-// 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
-
-// [해결책 3] 고계 미분 및 테일러 급수 근사 시 부동소수점 오차 누적 억제
-double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
-
-// [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
-double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
-
-// [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
-// 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
-int sample_curve_adaptive(
-    const ASTNode* f_root,
-    double x_min, double x_max,
-    int canvas_width_px,
-    double* out_x, double* out_y, int max_samples
-);
-
-// 4. 점근선 자체 추출 및 후보 방정식 잔차 검증 (파이썬 커널 전달용)
-
-// 독립 API 1: 정의역 내 수직 점근선 추출
-int extract_vertical_asymptotes(
-    const ASTNode* f_root,
-    double x_min, double x_max,
-    int canvas_width_px,
-    GAsymp* out_list, int max_count
-);
-
-// [파트 B] 비수직 점근선(수평·사선·곡선) 잔차 r(x) = |f(x) - g(x)| 검증기
-bool evaluate_residual_convergence_dir(
-    const ASTNode* f_root,
-    const ASTNode* cand_g_root,
-    int dir,
-    double* out_final_residual,
-    bool* out_is_converged
-);
-
-// 독립 API 2: 파이썬/모듈4가 넘긴 후보 식(cand_g_root)을 잔차 r(x)로 검증
-bool verify_candidate_asymptote_expr(
-    const ASTNode* f_root,
-    const ASTNode* cand_g_root,
-    ASType cand_type,
-    const char* cand_eq_str,
-    GAsymp* out_record
-);
-
-// [파트 C] 파이썬 전달용 통합 진입 함수 (독립 실행 메인 API)
-int extract_asymptote_equations(
-    const ASTNode* f_root,
-    double x_min, double x_max,
-    int canvas_width_px,
-    const ASTNode* const* cand_g_roots, // 파이썬/모듈4 제안 후보 AST 배열 (없으면 NULL)
-    const ASType* cand_types,    // 각 후보의 점근선 타입 배열 (없으면 NULL)
-    const char* const* cand_eq_strs,    // 각 후보의 문자열 배열 (없으면 NULL)
-    int num_candidates,                 // 후보 개수 (0 가능)
-    GAsymp* out_asymptotes,
-    int max_asymptotes
-);
-
-
-//========파이썬 딸깍용 코드 모음=========
-CALCTECH_API ASTNode* calctech_parse_formula(const char* expr);
-CALCTECH_API void calctech_free_formula(ASTNode* root);
-CALCTECH_API void calctech_formula_to_latex(const char* expr, char* out_buf, int max_len);
-
-CALCTECH_API ViewportPackage* calctech_build_viewport(
-    const ASTNode* f_root,
-    const ASTNode* g_root,
-    double x_min,
-    double x_max,
-    int canvas_width_px,
-    int scale_target,
-    int x_unit_mode,
-    int include_origin_y
-);
-CALCTECH_API void calctech_free_viewport(ViewportPackage* pkg);
+ // [DLL 외부 공개 - 모듈 IV 60fps 메인/서브 캔버스 빈칸 채우기 함수]
+ // 사용하지 않는 g_root 또는 출력 배열 포인터에는 NULL(Python None) 전달 가능
+ CALCTECH_API int calctech_fill_dual_canvas(
+     const ASTNode* f_root,              // 주함수 f(x) AST (필수)
+     const ASTNode* g_root,              // 보조함수 g(x) AST (없으면 NULL)
+     double x_min,                       // 현재 뷰포트 X 시작점
+     double x_max,                       // 현재 뷰포트 X 끝점
+     int n,                              // Python NumPy 배열 길이 (샘플 수)
+     const ScaleOption* scale_opt,       // 축 스케일링 옵션 (NULL이면 기본값 적용)
+     double* out_x,                      // [출력] 공통 X좌표 배열
+     double* out_main_y,                 // [출력] 메인 캔버스 f(x) 배열
+     double* out_g_y,                    // [출력] 메인 캔버스 g(x) 배열 (NULL 허용)
+     double* out_sub_dy,                 // [출력] 서브 캔버스 1계도함수 f'(x) 배열 (NULL 허용)
+     double* out_sub_d2y,                // [출력] 서브 캔버스 2계도함수 f''(x) 배열 (NULL 허용)
+     double* out_sub_int,                // [출력] 서브 캔버스 누적 정적분 배열 (NULL 허용)
+     DualCanvasMeta* out_meta            // [출력] 그래프 요약 송장 (필수)
+ );
+//======================================================

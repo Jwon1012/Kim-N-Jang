@@ -146,6 +146,7 @@
     <ClCompile Include="main.c" />
     <ClCompile Include="모듈III_test.c" />
     <ClCompile Include="모듈II_test.c" />
+    <ClCompile Include="모듈IV_test.c" />
     <ClCompile Include="모듈I_test.c" />
   </ItemGroup>
   <ItemGroup>

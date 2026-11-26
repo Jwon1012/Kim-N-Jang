@@ -21,7 +21,7 @@ static double refine_vertical_asymptote_x(const ASTNode* root, double a, double 
 static bool evaluate_residual_convergence_dir(
     const ASTNode* f_root, const ASTNode* cand_g_root,
     int dir, double* out_final_residual, bool* out_is_converged);
-static bool detect_self_horizontal_dir(const ASTNode* root, int dir, double* out_b);
+static bool detect_self_horizontal_dir(const ASTNode* f_root, int dir, double* out_y, double* out_step_diff);
 
 // [모듈 III] C-Python 파이프라인 연결 준비
 
