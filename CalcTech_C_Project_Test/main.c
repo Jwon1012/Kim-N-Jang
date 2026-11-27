@@ -171,7 +171,8 @@ static void print_advanced_analysis(const ASTNode* root, double x_min, double x_
 // main.c -> print_advanced_analysis() 바로 위에 추가
 static int is_exact_decimal_label(const char* str) {
     // 분수('/')나 기호 상수(pi, e, sqrt, ln)가 없으면 이미 딱 떨어지는 숫자
-    return (strpbrk(str, "/pisqreln") == NULL);}
+    return (strpbrk(str, "/pisqreln") == NULL);
+}
 int main(void) {
     char input[256];
     double x_min = -10.0, x_max = 10.0;

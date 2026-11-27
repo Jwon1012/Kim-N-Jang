@@ -890,7 +890,7 @@ int sample_curve_adaptive(
 
 #pragma endregion
 
-#pragma region 선발된 점근선의 방정식 최종 검증 및 전달
+ #pragma region 선발된 점근선의 방정식 최종 검증 및 전달
 
 // ※점근선의 수학적 정의: 곡선 위의 한 점이 정해진 직선에 한없이 가까워질때 두 대상 사이의 거리가 0에 수렴하는 기준 직선
 

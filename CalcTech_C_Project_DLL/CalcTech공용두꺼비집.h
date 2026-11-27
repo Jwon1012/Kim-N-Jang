@@ -1,9 +1,15 @@
 ﻿#pragma once
 #define _USE_MATH_DEFINES
+// DLL 프로젝트 속성 > C/C++ > 전처리기 > 전처리기 정의에 CALCTECH_EXPORTS 추가
+#ifdef CALCTECH_EXPORTS
 #define CALCTECH_API __declspec(dllexport)
+#else
+#define CALCTECH_API __declspec(dllimport)
+#endif
 
 // 주의: 윈도우가 아닌 OS에서 개발시 오류가 발생할 수 있으므로 pragma region ~ endregion문을 제거해야함
 
+//[필독] 외부(모듈 5)에서 쓸 모든 함수 선언 앞에 반드시 CALCTECH_API를 붙일 것
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -109,31 +115,31 @@ typedef struct {
 //모듈I: 사용자가 입력한 수식을 AST 형태로 변환하기
 
 // ★ 입력받은 수식 문자열을 분석하여 토큰 리스트로 반환
-TokenList tokenize(const char* expr);
+CALCTECH_API TokenList tokenize(const char* expr);
 
 // 토큰 리스트의 내용물을 [ '2', '*', 'x' ] 형태로 콘솔에 출력
-void print_tokens(const TokenList* list);
+CALCTECH_API void print_tokens(const TokenList* list);
 
 // 사용이 끝난 토큰 리스트의 동적 할당 메모리 해제
-void free_token_list(TokenList* list);
+CALCTECH_API void free_token_list(TokenList* list);
 
 // 연산자 우선순위 반환 (숫자가 클수록 먼저 계산)
-int get_op_precedence(const ASTNode* node);
+CALCTECH_API int get_op_precedence(const ASTNode* node);
 
 // 필요 시 \left( ... \right) 로 감싸서 출력하는 도우미
-void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len);
+CALCTECH_API void append_child_latex(const ASTNode* child, int parent_prec, int is_right_operand, char* out_buf, size_t max_len);
 
 /* --- 노드 생성 / 해제 및 파서 도우미 선언-- */
-void free_ast(ASTNode* node);
+CALCTECH_API void free_ast(ASTNode* node);
 
 /* --- 재귀 강하 파싱 함수 선언-- - */
-ASTNode* parse_expression(Parser* p);
+CALCTECH_API ASTNode* parse_expression(Parser* p);
 
 /* --- 트리 시각화 출력 함수 선언-- */
-void print_ast_tree(ASTNode* root);
+CALCTECH_API void print_ast_tree(ASTNode* root);
 
 // ★AST 트리를 재귀적으로 순회하며 LaTeX 문자열 조립
-void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
+CALCTECH_API void ast_to_latex(const ASTNode* node, char* out_buf, size_t max_len);
 
 //파이썬 딸깍용 외부 공개 창구
 CALCTECH_API ASTNode* calctech_parse_formula(const char* expr);
@@ -280,14 +286,14 @@ typedef struct {
  typedef OsculatingCircleInfo OscCircle;
 
 // [1] 사용자가 입력한 수식을 진짜로 계산하는 함수
- double eval_ast(const ASTNode* node, double x);
+ CALCTECH_API double eval_ast(const ASTNode* node, double x);
  // [2] 단일 점 수치 미분 (1계, 2계 중앙 차분법)
- double num_diff_1st(const ASTNode* root, double x);
- double num_diff_2nd(const ASTNode* root, double x);
+ CALCTECH_API double num_diff_1st(const ASTNode* root, double x);
+ CALCTECH_API double num_diff_2nd(const ASTNode* root, double x);
  // [3] 단일 구간 정적분 (심프슨 1/3 법칙)
- double num_integrate(const ASTNode* root, double a, double b, int steps);
+ CALCTECH_API double num_integrate(const ASTNode* root, double a, double b, int steps);
  // [4] 계산된 값을 2000개의 배열에다가 파바박 집어넣는 함수
- void sample_calculus_arrays(
+ CALCTECH_API void sample_calculus_arrays(
      const ASTNode* root, //모듈I이 만든 수식 트리
      double x_min, //x축 시작점
      double x_max, //x축 끝점
@@ -302,13 +308,13 @@ typedef struct {
 
  /*곡선과 접선으로 둘러쌓인 넓이*/
  //  접선 정보 구조체 생성 및 접선의 방정식 계산: g_t(x) = f'(t)(x - t) + f(t)
- TangentInfo calc_tangent_info(const ASTNode* f, double t);
+ CALCTECH_API TangentInfo calc_tangent_info(const ASTNode* f, double t);
 
  //곡선과 접선이 이루는 영역의 4가지 유형의 위아래를 막아주는 재료
- double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
+ CALCTECH_API double eval_boundary(int bound_type, const ASTNode* f, TangentInfo tan_info, double x);
 
  // 평면 자동 분할기: 4가지 유형의 모든 영역을 자동 추출
- int partition_tangent_regions(
+ CALCTECH_API int partition_tangent_regions(
      const ASTNode* f,
      TangentInfo tan_info,
      double x_min,
@@ -318,7 +324,7 @@ typedef struct {
  );
 
  //[★ PIP 파생함수] t 이동에 따른 선택 영역 넓이 변화 함수 S(t) 생성
- void generate_tangent_area_S(
+ CALCTECH_API void generate_tangent_area_S(
      const ASTNode* f,
      double t_min,
      double t_max,
@@ -333,7 +339,7 @@ typedef struct {
  /*구간 누적& 이동 적분*/
 
  //g(x)의 그래프를 PIP에 그리기 위한 밑작업 함수
- void generate_def_integral_array(
+ CALCTECH_API void generate_def_integral_array(
      const ASTNode* f,
      double x_min,
      double x_max,
@@ -348,14 +354,14 @@ typedef struct {
 
  /* 특이함수 정적분 & 이상적분*/
  // 제2종: 점근선 같은 구간을 피한 이상적분
- double improper_integral_II(const ASTNode* f, double a, double b, int steps);
+ CALCTECH_API double improper_integral_II(const ASTNode* f, double a, double b, int steps);
 
  // 제1종: a~x를 정적분한 후 a를 극한으로 보내는 적분
  // - 변수 치환 x = a + u / (1 - u) 를 통해 [a, ∞) 구간을 유한 구간 [0, 1)로 압축하여 적분
- double improper_integral_I(const ASTNode* f, double a, int steps);
+ CALCTECH_API double improper_integral_I(const ASTNode* f, double a, int steps);
 
  //또 심프슨 법칙이야. 우린 숭배해야만해
- void generate_func_bounds_integral_array(
+ CALCTECH_API void generate_func_bounds_integral_array(
      const ASTNode* f,
      const ASTNode* alpha, // 아래끝 함수 α(x)
      const ASTNode* beta,  // 위끝 함수 β(x)
@@ -367,7 +373,7 @@ typedef struct {
  );
 
  /*파생함수 II : 접점 t 이동에 따른 접선의 절편 & 축 삼각형 넓이 변화*/
- void generate_tangent_intercepts_array(
+ CALCTECH_API void generate_tangent_intercepts_array(
      const ASTNode* f,
      double t_min,
      double t_max,
@@ -381,7 +387,7 @@ typedef struct {
  /*파생함수 III: 합성함수*/
 
  //N축 기반 합성함수 개형 추론
- void generate_composite_n_axis_arrays(
+ CALCTECH_API void generate_composite_n_axis_arrays(
      const ASTNode* f, // 겉함수 f(t)
      const ASTNode* g, // 속함수 g(x)
      double x_min,
@@ -396,7 +402,7 @@ typedef struct {
 
  //  합성방정식 f(g(x)) = k 의 모든 실근과 N축 수선 꺾임 좌표 추출
  //  반환값: 찾아낸 전체 실근 x의 총개수
- int solve_composite_equation_n_axis(
+ CALCTECH_API int solve_composite_equation_n_axis(
      const ASTNode* f, // 겉함수 f(t)
      const ASTNode* g, // 속함수 g(x)
      double k,         // 우변 상수 k (f(g(x)) = k)
@@ -410,7 +416,7 @@ typedef struct {
 
  // 합성부등식 f(g(x)) [op] k 해집합 마스크 생성
  // 마스크: 조건을 만족시키는 칸은 1(통과), 그렇지 않은 칸은 0(빠꾸)로 분류하는 채점표 배열
- void scan_composite_inequality(
+ CALCTECH_API void scan_composite_inequality(
      const ASTNode* f,
      const ASTNode* g,
      double k,
@@ -427,7 +433,7 @@ typedef struct {
  CDP calc_cascade_derivative_at(const ASTNode* f, double t);
 
  // PIP 1(f') 및 PIP 2(f'') 배경 곡선 배열 생성
- void generate_cascade_derivative_arrays(
+ CALCTECH_API void generate_cascade_derivative_arrays(
      const ASTNode* f,
      double x_min,
      double x_max,
@@ -440,11 +446,11 @@ typedef struct {
  /*파생함수 V : MVT의 기하적 구현*/
 
  // 함수의 최대속도 찾는 라그랑주 MVT
- MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
+ CALCTECH_API MVTResult calc_lagrange_mvt(const ASTNode* f, double a, double b);
  // 두 함수의 변화율을 비유하는 코시 MVT, 극한 넣으면 로피탈 정리 뚝딱
- Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b);
+ CALCTECH_API Cauchy calc_cauchy_mvt(const ASTNode* f, const ASTNode* g, double a, double b);
  // 안개가 자욱한 야산에서 안전하게 하산하려는 G.D.
- GDTraceResult trace_gradient_descent(
+ CALCTECH_API GDTraceResult trace_gradient_descent(
      const ASTNode* f,
      double x0,          // 공을 떨어뜨릴 초기 위치
      double lr,          // 학습률 eta (보폭 크기)
@@ -455,7 +461,7 @@ typedef struct {
 
  // 호의 길이 추적
  // [PIP 파생함수] 시작점 a 기준 누적 곡선 길이 s(x) 및 직선 거리 d(x) 배열 생성
- void generate_arc_length_arrays(
+ CALCTECH_API void generate_arc_length_arrays(
      const ASTNode* f,
      double a,           // 길이 측정 시작 기준점 x = a
      double x_min,
@@ -467,12 +473,12 @@ typedef struct {
  );
 
  //곡선의 길이를 N등분하는 좌표 추출 및 굴곡도(Tortuosity) 분석
- ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
+ CALCTECH_API ALR calc_arc_length_partition(const ASTNode* f, double a, double b, int num_divisions);
 
  // 매개변수 곡선 (g(t), f(t)) 의 순간 속력 v(t) 및 누적 이동 거리 s(t) 추적;
 
  // [PIP 파생함수] 매개변수 t에 따른 궤적 좌표 (x(t), y(t)), 순간 속력 v(t), 누적 이동 거리 s(t) 생성
- void generate_param_arc_arrays(
+ CALCTECH_API void generate_param_arc_arrays(
      const ASTNode* f,   // y(t) 수식 트리
      const ASTNode* g,   // x(t) 수식 트리
      double t_min,
@@ -486,7 +492,7 @@ typedef struct {
  );
 
  /*파생함수 VII : 뉴턴 - 랩슨법으로 교점 탐색 & 접선 궤적 추적*/
- NewtonTrace trace_newton_raphson(
+ CALCTECH_API NewtonTrace trace_newton_raphson(
      const ASTNode* f,
      const ASTNode* g,   // NULL 허용 (단일 방정식 f(x)=0 모드)
      double x0,          // 사용자가 슬라이더로 지정하는 초기 추정값
@@ -494,7 +500,7 @@ typedef struct {
  );
 
  /*파생함수 VIII : 테일러 급수로 초월함수 근사(최대 14회)& 잔여 오차 추적*/
- TaylorResult generate_taylor_approx_arrays(
+ CALCTECH_API TaylorResult generate_taylor_approx_arrays(
      const ASTNode* f,
      double a,           // 전개 기준점 x = a
      int degree,         // 다항식 차수 n (0 ~ MAX_TAYLOR_DEGREE)
@@ -510,7 +516,7 @@ typedef struct {
  // [PIP 파생함수] 원함수 격자를 기반으로 역함수 대칭 곡선 좌표 (inv_x, inv_y) 및 도함수 역수 배열 생성
  // 원함수 점 (x, f(x)) -> 역함수 점 (f(x), x) 로 투영
  // 반환값: 구간 내 일대일대응(단조성) 여부 (1: 단조함수, 0: 극값 포함 비단조)
- int generate_inverse_curve_arrays(
+ CALCTECH_API int generate_inverse_curve_arrays(
      const ASTNode* f,
      double x_min,
      double x_max,
@@ -523,14 +529,14 @@ typedef struct {
  );
 
  // [슬라이더 연동 IX] 특정 접점 t에서 원함수 접선과 역함수 대칭 접선 정보 동시 추출
- IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
+ CALCTECH_API IDI calc_inverse_derivative_at(const ASTNode* f, double t, double x_min, double x_max);
 
  /* 파생함수 X : 곡률(kappa)과 접촉원(Osculating Circle) 추적*/
  // [슬라이더 연동 X-1] 특정 점 t에서의 곡률 κ(t), 곡률반지름 R(t), 접촉원 중심 (center_x, center_y) 계산
- OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
+ CALCTECH_API OscCircle calc_osculating_circle_at(const ASTNode* f, double t);
 
  // [PIP 파생함수 X-2] 구간 전체에 대한 곡률 함수 κ(x) 및 곡률반지름 R(x) 배열 생성
- void generate_curvature_array(
+ CALCTECH_API void generate_curvature_array(
      const ASTNode* f,
      double x_min,
      double x_max,
@@ -584,21 +590,21 @@ typedef struct {
 
  //1. 동적 축 스케일링 & 수칙 적응형 샘플링 커널
  // 서브트리에 상수 'pi'가 포함되어 있는지 확인 (예: sin(2*pi*x) 판별용)
- bool ast_contains_pi(const ASTNode* node);
+ CALCTECH_API  bool ast_contains_pi(const ASTNode* node);
 
  // 서브트리에 변수 'x' 외에 비선형 연산(exp, ln, 2차 이상 거듭제곱 등)이 있는지 확인
- bool ast_is_nonlinear_arg(const ASTNode* node);
+ CALCTECH_API bool ast_is_nonlinear_arg(const ASTNode* node);
 
  // AST 전체를 분석해 X축에 π 라디안 눈금을 쓸지(1) 일반 10진 눈금을 쓸지(0) 판별
- int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
- int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
+ CALCTECH_API int analyze_ast_pi_mode(const ASTNode* node, bool inside_trig);
+ CALCTECH_API int decide_x_pi_mode(const ASTNode* root, int x_unit_mode);
 
  // Nice-Step 눈금 간격 계산기 (10진 및 π 라디안)
- double calc_nice_step(double range, int target_ticks);
- double calc_pi_nice_step(double range, int target_ticks);
+ CALCTECH_API double calc_nice_step(double range, int target_ticks);
+ CALCTECH_API double calc_pi_nice_step(double range, int target_ticks);
 
  // 동적 축 스케일링 메인 통합 함수 (AScale 산출)
- AScale compute_dynamic_axis_scale(
+ CALCTECH_API AScale compute_dynamic_axis_scale(
      const ASTNode* f_root, const ASTNode* g_root,
      double x_min, double x_max,
      double* y_f, double* y_g, int sample_count,
@@ -608,14 +614,14 @@ typedef struct {
  //2. 함수의 심화 정보 (극점, 교점, 극한값"만" 있는 점, 변곡점) & 소수점 근사치 복원
 
  // 수치 근사값을 기호 문자열(유리수 q<=100, 이차무리수 d<=100, π, e, ln)로 복원, 불가 시 %.6f
- void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
+ CALCTECH_API void format_symbolic_or_decimal(double val, char* out_buf, size_t buf_size);
 
 
  // 함수 최소 주기 탐색 (비주기면 NAN, out_label에 "None" 저장)
- double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
+ CALCTECH_API double detect_function_period(const ASTNode* f_root, double search_max, char* out_label, size_t label_size);
 
  // 메인 특징점 추출 진입 함수
- int extract_graph_keypoints(
+ CALCTECH_API int extract_graph_keypoints(
      const ASTNode* f_root, const ASTNode* g_root,
      double x_min, double x_max,
      GraphKeyPoint* out_points, int max_points
@@ -624,14 +630,14 @@ typedef struct {
  // 3. 고해상도 동적 샘플링, 특이점 보간 & 고계 미분 정밀도 보완 (최종 통합부)
 
  // [해결책 3] 고계 미분 및 테일러 급수 근사 시 부동소수점 오차 누적 억제
- double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
+ CALCTECH_API double eval_nth_derivative_safe(const ASTNode* f, double x, int order);
 
  // [해결책 2] 특이점 구간(ln(x) 정의역 경계, sin(x)/x 제거 가능 특이점) 정밀 평가 헬퍼
- double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
+ CALCTECH_API double eval_with_singularity_guard(const ASTNode* f, double x, bool* out_is_hole);
 
  // [해결책 1 + 2] 고해상도(canvas_width_px) 연동 동적 샘플링 & 정의역 경계 로그 세분화
  // 반환값: 실제 out_x, out_y 버퍼에 채워진 유효 샘플 점 개수
- int sample_curve_adaptive(
+ CALCTECH_API int sample_curve_adaptive(
      const ASTNode* f_root,
      double x_min, double x_max,
      int canvas_width_px,
@@ -672,7 +678,7 @@ typedef enum {
  );
 
  // [파트 B] 비수직 점근선(수평·사선·곡선) 잔차 r(x) = |f(x) - g(x)| 검증기
- bool evaluate_residual_convergence_dir(
+ CALCTECH_API bool evaluate_residual_convergence_dir(
      const ASTNode* f_root,
      const ASTNode* cand_g_root,
      int dir,
@@ -681,7 +687,7 @@ typedef enum {
  );
 
  // 독립 API 2: 파이썬/모듈4가 넘긴 후보 식(cand_g_root)을 잔차 r(x)로 검증
- bool verify_candidate_asymptote_expr(
+ CALCTECH_API bool verify_candidate_asymptote_expr(
      const ASTNode* f_root,
      const ASTNode* cand_g_root,
      ASType cand_type,
@@ -690,7 +696,7 @@ typedef enum {
  );
 
  // [파트 C] 파이썬 전달용 통합 진입 함수 (독립 실행 메인 API)
- int extract_asymptote_equations(
+ CALCTECH_API int extract_asymptote_equations(
      const ASTNode* f_root,
      double x_min, double x_max,
      int canvas_width_px,

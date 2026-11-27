@@ -15,25 +15,37 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="모듈I_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="모듈II_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="모듈III_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="main.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="모듈IV_test.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
+    <None Include="cpp.hint" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="framework.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
     <ClInclude Include="CalcTech공용두꺼비집.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CalcTech_C_Project.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈I.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈III.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈IV.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="모듈II.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
